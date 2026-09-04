@@ -110,7 +110,7 @@ export default function CreateScreen({ navigation }) {
       const permanentVideoUrl = uploadResponse?.mediaUrl || uploadResponse?.url;
       if (!permanentVideoUrl) throw new Error('Video upload did not return a media URL.');
 
-      console.log('[Snaply] create reel URL:', 'http://10.23.8.245:5000/api/reels');
+      console.log('[Snaply] create reel URL:', `${API_BASE_URL}/reels`);
       const createdReel = await apiRequest('/reels', {
         method: 'POST',
         body: JSON.stringify({

@@ -6,6 +6,11 @@ const PORT = 5000;
 const PHYSICAL_LAN_IP = '10.23.8.245';
 const ANDROID_EMULATOR_HOST = `http://10.0.2.2:${PORT}`;
 const WEB_HOST = `http://localhost:${PORT}`;
+const PRODUCTION_BACKEND_URL = 'https://snaply-server-aogm.onrender.com';
+
+const isProduction =
+  process.env.NODE_ENV === 'production'
+  || (typeof __DEV__ !== 'undefined' && !__DEV__);
 
 function stripSlash(value) {
   return String(value || '').trim().replace(/\/$/, '');
@@ -49,12 +54,16 @@ function getExpoLanIp() {
 function resolveApiHost() {
   const envApi = stripSlash(process.env.EXPO_PUBLIC_API_URL);
 
-  if (Platform.OS === 'web') {
-    return envApi || WEB_HOST;
+  if (envApi && (Platform.OS === 'web' || !isLoopback(envApi))) {
+    return envApi;
   }
 
-  if (envApi && !isLoopback(envApi)) {
-    return envApi;
+  if (isProduction) {
+    return PRODUCTION_BACKEND_URL;
+  }
+
+  if (Platform.OS === 'web') {
+    return WEB_HOST;
   }
 
   if (String(process.env.EXPO_PUBLIC_USE_EMULATOR || '').toLowerCase() === 'true') {
