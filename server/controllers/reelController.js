@@ -6,6 +6,7 @@ const { createNotification } = require('./notificationController');
 
 const isInvalidVideoUrl = (value) => {
   const url = String(value || '').trim();
+  if (/^https?:\/\//i.test(url)) return false;
   if (!/^\/uploads\/reels\/[^/]+\.mp4$/i.test(url)) return true;
   const filePath = path.join(__dirname, '..', url.replace(/^\//, ''));
   return !fs.existsSync(filePath) || fs.statSync(filePath).size === 0;
@@ -92,7 +93,7 @@ const createReel = async (req, res, next) => {
     const { userId, videoUrl, caption = '', musicName = '' } = req.body;
 
     if (isInvalidVideoUrl(videoUrl)) {
-      return res.status(400).json({ message: 'videoUrl must reference an existing /uploads/reels/*.mp4 file.' });
+      return res.status(400).json({ message: 'videoUrl must be an HTTPS URL or an existing local reel file.' });
     }
 
     const resolvedUserId = userId || (await getCurrentUserId());
