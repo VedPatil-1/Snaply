@@ -2,6 +2,7 @@ const User = require('../models/User');
 const { createNotification } = require('./notificationController');
 
 const normalizeUsername = (value = '') => String(value).trim().toLowerCase();
+const DEVELOPMENT_USERNAME = 'alicia';
 
 const getCurrentUser = async (req, res, next) => {
   try {
@@ -22,7 +23,7 @@ const getCurrentUser = async (req, res, next) => {
 
 const updateCurrentUser = async (req, res, next) => {
   try {
-    const currentUser = await User.findOne({ username: 'alicia' });
+    const currentUser = await User.findOne({ username: DEVELOPMENT_USERNAME });
 
     if (!currentUser) {
       return res.status(404).json({ message: 'Current development user not found' });
@@ -30,20 +31,13 @@ const updateCurrentUser = async (req, res, next) => {
 
     const { name, username, bio, profilePicture } = req.body || {};
 
+    if (username !== undefined && normalizeUsername(username) !== DEVELOPMENT_USERNAME) {
+      return res.status(400).json({ message: 'The development username cannot be changed.' });
+    }
+
     if (name !== undefined) currentUser.name = String(name).trim() || currentUser.name;
     if (bio !== undefined) currentUser.bio = String(bio).trim();
     if (profilePicture !== undefined) currentUser.profilePicture = String(profilePicture).trim() || currentUser.profilePicture;
-
-    if (username !== undefined && String(username).trim()) {
-      const nextUsername = normalizeUsername(username);
-      const duplicate = await User.findOne({ username: nextUsername, _id: { $ne: currentUser._id } });
-
-      if (duplicate) {
-        return res.status(409).json({ message: 'That username is already taken.' });
-      }
-
-      currentUser.username = nextUsername;
-    }
 
     await currentUser.save();
 
