@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   StyleSheet,
@@ -11,9 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../components/ProfileHeader';
 import { DEV_USERNAME, resolvePostMediaUrl } from '../config';
+import { Ionicons } from '@expo/vector-icons';
 import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
-import { publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
+import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function ProfileScreen({ navigation }) {
@@ -22,6 +24,8 @@ export default function ProfileScreen({ navigation }) {
   const [reels, setReels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('posts');
+  const [savedPosts, setSavedPosts] = useState([]);
+  const [savedReels, setSavedReels] = useState([]);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -33,11 +37,13 @@ export default function ProfileScreen({ navigation }) {
 
       setUser({
         ...currentUser,
-        postsCount: userPosts.length,
+        postsCount: Number(currentUser.postsCount ?? (userPosts.length + userReels.length)),
         isFollowing: false,
       });
       setPosts(userPosts);
       setReels(userReels);
+      setSavedPosts(currentUser.savedPosts || []);
+      setSavedReels(currentUser.savedReels || []);
     } catch (error) {
       console.warn('Profile load failed:', error.message);
     } finally {
@@ -85,6 +91,36 @@ export default function ProfileScreen({ navigation }) {
     navigation.navigate('EditProfile');
   };
 
+  const handleDelete = (item) => {
+    const isReel = activeTab === 'reels';
+    Alert.alert(isReel ? 'Delete this reel?' : 'Delete this post?', 'This action cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiRequest(`/${isReel ? 'reels' : 'posts'}/${item._id}`, {
+              method: 'DELETE',
+              body: JSON.stringify({ userId: user._id }),
+            });
+            if (isReel) setReels((prev) => prev.filter((entry) => String(entry._id) !== String(item._id)));
+            else setPosts((prev) => prev.filter((entry) => String(entry._id) !== String(item._id)));
+            setUser((prev) => ({ ...prev, postsCount: Math.max(0, Number(prev?.postsCount || 0) - 1) }));
+            if (!isReel) publishPostUpdate({ _id: item._id, deleted: true });
+          } catch (error) {
+            Alert.alert('Delete failed', error.message || 'Unable to delete this item.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const displayedItems = activeTab === 'posts' ? posts
+    : activeTab === 'reels' ? reels
+      : activeTab === 'savedPosts' ? savedPosts : savedReels;
+  const isReelTab = activeTab === 'reels' || activeTab === 'savedReels';
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -111,7 +147,7 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={activeTab === 'posts' ? posts : reels}
+        data={displayedItems}
         keyExtractor={(item) => String(item._id)}
         numColumns={3}
         showsVerticalScrollIndicator={false}
@@ -127,32 +163,26 @@ export default function ProfileScreen({ navigation }) {
               onOpenFollowing={() => navigation.navigate('RelationshipList', { userId: user?._id, relationship: 'following' })}
             />
             <View style={styles.tabBar}>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'posts' && styles.activeTab]}
-                onPress={() => setActiveTab('posts')}
-              >
-                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>Posts</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'reels' && styles.activeTab]}
-                onPress={() => setActiveTab('reels')}
-              >
-                <Text style={[styles.tabText, activeTab === 'reels' && styles.activeTabText]}>Reels</Text>
-              </TouchableOpacity>
+              {['posts', 'reels', 'savedPosts', 'savedReels'].map((tab) => (
+                <TouchableOpacity key={tab} style={[styles.tabButton, activeTab === tab && styles.activeTab]} onPress={() => setActiveTab(tab)}>
+                  <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab === 'savedPosts' ? 'Saved posts' : tab === 'savedReels' ? 'Saved reels' : tab[0].toUpperCase() + tab.slice(1)}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </>
         )}
-        ListEmptyComponent={<View style={styles.placeholderBox}><Text style={styles.placeholderText}>{activeTab === 'reels' ? 'No reels yet' : 'No posts yet'}</Text></View>}
+        ListEmptyComponent={<View style={styles.placeholderBox}><Text style={styles.placeholderText}>{isReelTab ? 'No reels yet' : 'No posts yet'}</Text></View>}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.profileTile} onPress={() => navigation.navigate(activeTab === 'reels' ? 'ReelViewer' : 'PostDetail', activeTab === 'reels' ? { reelId: item._id } : { postId: item._id })}>
-            {activeTab === 'reels' ? (
+          <TouchableOpacity style={styles.profileTile} onPress={() => navigation.navigate(isReelTab ? 'ReelViewer' : 'PostDetail', isReelTab ? { reelId: item._id } : { postId: item._id })}>
+            {isReelTab ? (
               <ReelGridPreview reel={item} style={styles.profileTileImage} />
             ) : resolvePostMediaUrl(item) ? (
               <Image source={{ uri: resolvePostMediaUrl(item) }} style={styles.profileTileImage} resizeMode="cover" />
             ) : (
               <View style={[styles.profileTileImage, styles.mediaFallback]} />
             )}
-            {activeTab === 'reels' ? <View style={styles.videoIndicator}><Text style={styles.profileTileText}>▶</Text></View> : null}
+            {isReelTab ? <View style={styles.videoIndicator}><Text style={styles.profileTileText}>▶</Text></View> : null}
+            {!activeTab.includes('saved') ? <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item)}><Ionicons name="ellipsis-horizontal" size={18} color="#fff" /></TouchableOpacity> : null}
           </TouchableOpacity>
         )}
       />
@@ -260,5 +290,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
+  },
+  deleteButton: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,24,39,0.72)',
   },
 });

@@ -135,6 +135,14 @@ export function resolveMediaUrl(url) {
   if (/^https?:/i.test(value)) {
     try {
       const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+
+      if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+        const androidLanUrl = new URL(value);
+        androidLanUrl.hostname = PHYSICAL_LAN_IP;
+        return androidLanUrl.toString();
+      }
+
       return parsed.toString();
     } catch (error) {
       return null;
@@ -157,9 +165,24 @@ function isVideoMediaUrl(url) {
 export function resolveMediaThumbnailUrl(media) {
   const candidates = typeof media === 'string'
     ? [media]
-    : [media?.thumbnailUrl, media?.posterUrl, media?.thumbnail, media?.poster, media?.mediaUrl];
+    : [
+        media?.thumbnailUrl,
+        media?.posterUrl,
+        media?.thumbnail,
+        media?.poster,
+        media?.coverImage,
+        media?.imageUrl,
+        media?.image,
+        media?.mediaUrl,
+        media?.videoPoster,
+      ];
 
-  const thumbnail = candidates.find((candidate) => candidate && !isVideoMediaUrl(candidate));
+  const thumbnail = candidates.find((candidate) => {
+    if (!candidate) return false;
+    if (typeof candidate !== 'string') return false;
+    return !isVideoMediaUrl(candidate);
+  });
+
   return thumbnail ? resolveMediaUrl(thumbnail) : null;
 }
 
@@ -183,6 +206,10 @@ export function getReelThumbnail(videoUrl) {
   }
   // All other hosts — no thumbnail can be derived
   return null;
+}
+
+export function resolveReelThumbnailUrl(reel) {
+  return resolveMediaThumbnailUrl(reel) || getReelThumbnail(reel?.videoUrl || reel?.mediaUrl);
 }
 
 if (__DEV__) {

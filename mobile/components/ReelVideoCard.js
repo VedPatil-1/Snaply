@@ -14,6 +14,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
 import { resolveMediaUrl } from '../config';
 import { colors } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ReelVideoCard({
   reel,
@@ -73,25 +74,8 @@ export default function ReelVideoCard({
   ]);
 
   useEffect(() => {
-    console.log('[Snaply] VIDEO CARD id:', reel?._id);
-    console.log('[Snaply] VIDEO CARD url:', videoUrl);
-    console.log('[Snaply] VIDEO CARD active:', isActive);
-    console.log('[Snaply] Android reel url:', videoUrl);
-  }, [reel?._id, videoUrl, isActive]);
-
-  useEffect(() => {
-    console.log('[Snaply] VIDEO PLAYER status:', reel?._id, playerStatus);
-    console.log('[Snaply] VIDEO PLAYER playing:', reel?._id, Boolean(player?.playing));
-    console.log('[Snaply] VIDEO PLAYER duration:', reel?._id, player?.duration || 0);
-    console.log('[Snaply] Android reel player:', reel?._id);
-    console.log('[Snaply] Android reel status:', playerStatus);
-    console.log('[Snaply] Android reel playing:', Boolean(player?.playing));
-    console.log('[Snaply] Android reel duration:', player?.duration || 0);
-  }, [playerStatus, player, reel?._id]);
-
-  useEffect(() => {
     if (playerError) {
-      console.warn('[Snaply] VIDEO PLAYER error:', reel?._id, playerError?.message || playerError);
+      console.warn('[Snaply] reel playback error:', reel?._id, playerError?.message || playerError);
     }
   }, [playerError, reel?._id]);
 
@@ -345,9 +329,7 @@ export default function ReelVideoCard({
         onPress={onToggleMute}
         activeOpacity={0.8}
       >
-        <Text style={styles.muteIcon}>
-          {isMuted ? '🔇' : '🔊'}
-        </Text>
+        <Ionicons name={isMuted ? 'volume-mute-outline' : 'volume-high-outline'} size={18} color="#fff" />
       </TouchableOpacity>
 
       {/* =====================================================
@@ -362,14 +344,7 @@ export default function ReelVideoCard({
           style={styles.actionButton}
           onPress={toggleLike}
         >
-          <Text
-            style={[
-              styles.actionIcon,
-              isLiked && styles.likedIcon,
-            ]}
-          >
-            {isLiked ? '♥' : '♡'}
-          </Text>
+          <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={28} color={isLiked ? '#ef4444' : '#fff'} />
 
           <Text style={styles.actionLabel}>
             {metadata.likesCount}
@@ -382,9 +357,7 @@ export default function ReelVideoCard({
             onOpenComments?.(reel)
           }
         >
-          <Text style={styles.actionIcon}>
-            💬
-          </Text>
+          <Ionicons name="chatbubble-outline" size={26} color="#fff" />
 
           <Text style={styles.actionLabel}>
             {metadata.commentsCount}
@@ -395,9 +368,7 @@ export default function ReelVideoCard({
           style={styles.actionButton}
           onPress={handleShare}
         >
-          <Text style={styles.actionIcon}>
-            ↗
-          </Text>
+          <Ionicons name="paper-plane-outline" size={26} color="#fff" />
 
           <Text style={styles.actionLabel}>
             Share
@@ -417,9 +388,7 @@ export default function ReelVideoCard({
             );
           }}
         >
-          <Text style={styles.actionIcon}>
-            {isSaved ? '🔖' : '🔖'}
-          </Text>
+          <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color="#fff" />
 
           <Text style={styles.actionLabel}>
             {isSaved ? 'Saved' : 'Save'}

@@ -9,12 +9,13 @@ import {
   View,
 } from 'react-native';
 import { resolveMediaUrl, resolvePostMediaUrl } from '../config';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onProfileClick }) {
+export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onSave, onProfileClick }) {
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
+  const [mediaAspectRatio, setMediaAspectRatio] = useState(null);
   const lastTapRef = useRef(0);
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
@@ -28,6 +29,7 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       .map((comment) => [String(comment._id), comment])).values()].reverse()
     : [];
   const likesCount = post.likesCount || post.likes?.length || 0;
+  const saved = Boolean(post.isSaved);
   const resolvedMediaUrl = resolvePostMediaUrl(post);
 
   useEffect(() => {
@@ -114,7 +116,19 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap}>
-        {resolvedMediaUrl ? <Image source={{ uri: resolvedMediaUrl }} style={styles.image} resizeMode="cover" /> : <View style={[styles.image, styles.mediaFallback]} />}
+        <View style={styles.mediaContainer}>
+          {resolvedMediaUrl ? (
+            <Image
+              source={{ uri: resolvedMediaUrl }}
+              style={[styles.image, mediaAspectRatio ? { aspectRatio: mediaAspectRatio, height: undefined } : null]}
+              resizeMode="contain"
+              onLoad={(event) => {
+                const source = event.nativeEvent?.source;
+                if (source?.width && source?.height) setMediaAspectRatio(source.width / source.height);
+              }}
+            />
+          ) : <View style={[styles.image, styles.mediaFallback]} />}
+        </View>
         {showHeart ? (
           <Animated.View
             pointerEvents="none"
@@ -128,18 +142,18 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       <View style={styles.actionRow}>
         <View style={styles.leftActions}>
           <TouchableOpacity onPress={() => onLike(post._id)} style={styles.actionButton}>
-            <Text style={[styles.actionText, post.isLiked && styles.likedText]}>{post.isLiked ? '♥' : '♡'}</Text>
+            <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={24} color={post.isLiked ? '#ef4444' : '#111827'} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowComments((value) => !value)} style={styles.actionButton}>
-            <Text style={styles.actionText}>💬</Text>
+            <Ionicons name="chatbubble-outline" size={22} color="#111827" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => onShare?.(post)} style={styles.actionButton}>
-            <Text style={styles.actionText}>↗</Text>
+            <Ionicons name="paper-plane-outline" size={22} color="#111827" />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => setSaved((value) => !value)} style={styles.actionButton}>
-          <Text style={styles.actionText}>{saved ? '🔖' : '📑'}</Text>
+        <TouchableOpacity onPress={() => onSave?.(post._id, !saved)} style={styles.actionButton}>
+          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color="#111827" />
         </TouchableOpacity>
       </View>
 
@@ -239,6 +253,12 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: 360,
+    backgroundColor: '#e5e7eb',
+    alignSelf: 'center',
+  },
+  mediaContainer: {
+    width: '100%',
+    alignItems: 'center',
     backgroundColor: '#e5e7eb',
   },
   mediaFallback: {

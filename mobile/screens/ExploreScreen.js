@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   StyleSheet,
@@ -11,29 +12,74 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../services/api';
 import { subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
+import { resolveMediaThumbnailUrl, resolvePostMediaUrl, resolveReelThumbnailUrl } from '../config';
+
+function interleaveExploreItems(posts, reels) {
+  const normalizedPosts = (Array.isArray(posts) ? posts : []).filter((post) => post?._id && resolvePostMediaUrl(post)).map((post) => ({
+    type: 'post',
+    id: String(post._id),
+    data: post,
+  }));
+
+  const normalizedReels = (Array.isArray(reels) ? reels : []).filter((reel) => reel?._id && resolveMediaThumbnailUrl(reel)).map((reel) => ({
+    type: 'reel',
+    id: String(reel._id),
+    data: reel,
+  }));
+
+  if (!normalizedPosts.length) return normalizedReels;
+  if (!normalizedReels.length) return normalizedPosts;
+
+  const list = [];
+  let postIndex = 0;
+  let reelIndex = 0;
+  let patternIndex = 0;
+
+  while (postIndex < normalizedPosts.length || reelIndex < normalizedReels.length) {
+    const remainingPosts = normalizedPosts.length - postIndex;
+    const remainingReels = normalizedReels.length - reelIndex;
+
+    if (!remainingPosts) {
+      list.push(normalizedReels[reelIndex++]);
+      continue;
+    }
+
+    const burstSize = Math.min(2 + (patternIndex % 3), remainingPosts);
+    for (let i = 0; i < burstSize; i += 1) {
+      if (postIndex < normalizedPosts.length) {
+        list.push(normalizedPosts[postIndex++]);
+      }
+    }
+
+    patternIndex += 1;
+
+    if (reelIndex < normalizedReels.length && (remainingPosts > 0 || remainingReels > 0)) {
+      list.push(normalizedReels[reelIndex++]);
+    }
+  }
+
+  return list.slice(0, 24);
+}
 
 export default function ExploreScreen({ navigation }) {
-  const [items, setItems] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [reels, setReels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+
+  const items = useMemo(() => interleaveExploreItems(posts, reels), [posts, reels]);
 
   const loadExplore = useCallback(async () => {
     try {
       const user = await apiRequest('/users/me');
       setCurrentUser(user);
-      const [posts, reels] = await Promise.all([apiRequest(`/posts/feed?userId=${user._id}`), apiRequest('/reels')]);
-      const mappedPosts = (Array.isArray(posts) ? posts : []).map((item) => ({
-        ...item,
-        kind: 'post',
-        _id: item._id,
-      }));
-      const mappedReels = (Array.isArray(reels) ? reels : []).map((item) => ({
-        ...item,
-        kind: 'reel',
-        _id: item._id,
-      }));
-      setItems([...mappedPosts, ...mappedReels].slice(0, 24));
+      const [feedPosts, feedReels] = await Promise.all([
+        apiRequest(`/posts/feed?userId=${user._id}`),
+        apiRequest('/reels'),
+      ]);
+      setPosts(Array.isArray(feedPosts) ? feedPosts : []);
+      setReels(Array.isArray(feedReels) ? feedReels : []);
       setError('');
     } catch (err) {
       setError(err.message || 'Unable to load explore content');
@@ -48,8 +94,12 @@ export default function ExploreScreen({ navigation }) {
 
   useEffect(() => {
     const unsubscribePost = subscribeToPostUpdates((updatedPost) => {
-      setItems((prev) => prev.map((item) => (
-        item.kind === 'post' && String(item._id) === String(updatedPost._id)
+      if (updatedPost?.deleted) {
+        setPosts((prev) => prev.filter((item) => String(item._id) !== String(updatedPost._id)));
+        return;
+      }
+      setPosts((prev) => prev.map((item) => (
+        String(item._id) === String(updatedPost._id)
           ? { ...item, ...updatedPost }
           : item
       )));
@@ -59,8 +109,6 @@ export default function ExploreScreen({ navigation }) {
     });
     return () => { unsubscribePost(); unsubscribeUser(); };
   }, [currentUser?._id]);
-
-  const data = useMemo(() => items, [items]);
 
   if (loading) {
     return (
@@ -83,6 +131,23 @@ export default function ExploreScreen({ navigation }) {
     );
   }
 
+  const renderItem = useCallback(({ item, index }) => {
+    const isLarge = index % 5 === 0 || index % 5 === 4;
+    const media = item.data;
+    const thumbnailUrl = item.type === 'reel' ? resolveReelThumbnailUrl(media) : null;
+    const likes = Number(item.data?.likesCount ?? item.data?.likes?.length ?? 0);
+
+    return (
+      <ExploreTile
+        item={item}
+        isLarge={isLarge}
+        thumbnailUrl={thumbnailUrl}
+        likes={likes}
+        navigation={navigation}
+      />
+    );
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
@@ -90,36 +155,80 @@ export default function ExploreScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={data}
+        data={items}
         numColumns={3}
-        keyExtractor={(item) => `${item.kind}-${item._id}`}
+        keyExtractor={(item) => `${item.type}-${item.id}`}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         contentContainerStyle={styles.listContent}
-        renderItem={({ item, index }) => {
-          const isLarge = index % 5 === 0 || index % 5 === 4;
-          const mediaUrl = item.kind === 'reel' ? (item.videoUrl || item.mediaUrl) : item.mediaUrl;
-
-          return (
-            <TouchableOpacity
-              onPress={() => {
-                if (item.kind === 'post') navigation.navigate('PostDetail', { postId: item._id });
-                else navigation.navigate('ReelViewer', { reelId: item._id });
-              }}
-              style={[styles.tileWrapper, isLarge && styles.largeTile]}
-            >
-              <Image source={{ uri: mediaUrl }} style={styles.tileImage} resizeMode="cover" />
-              {item.kind === 'post' ? (
-                <View style={styles.likeBadge}>
-                  <Text style={styles.likeBadgeText}>♥ {Number(item.likesCount ?? item.likes?.length ?? 0)}</Text>
-                </View>
-              ) : null}
-              {item.kind === 'reel' ? <View style={styles.reelBadge}><Text style={styles.reelBadgeText}>▶</Text></View> : null}
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={renderItem}
       />
     </SafeAreaView>
   );
 }
+
+const ExploreTile = React.memo(function ExploreTile({ item, isLarge, thumbnailUrl, likes, navigation }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.98,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const openItem = () => {
+    if (item.type === 'post') {
+      navigation.navigate('PostDetail', { postId: item.id });
+      return;
+    }
+    navigation.navigate('ReelViewer', { reelId: item.id });
+  };
+
+  const imageSource = thumbnailUrl ? { uri: thumbnailUrl } : null;
+
+  return (
+    <Animated.View style={[styles.tileWrapper, isLarge && styles.largeTile, { transform: [{ scale }] }]}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={openItem}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={styles.tileButton}
+      >
+        {imageSource ? (
+          <Image source={imageSource} style={styles.tileImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.mediaFallback}><Text style={styles.reelBadgeText}>▶</Text></View>
+        )}
+
+        <View style={styles.likeBadge}>
+          <Text style={styles.likeBadgeText}>♥ {likes}</Text>
+        </View>
+
+        {item.type === 'reel' ? (
+          <View style={styles.reelBadge}><Text style={styles.reelBadgeText}>▶</Text></View>
+        ) : null}
+
+        {item.type === 'reel' ? <View style={styles.reelLabel}><Text style={styles.reelLabelText}>Reel</Text></View> : null}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -162,6 +271,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  mediaFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#d1d5db',
+  },
   likeBadge: {
     position: 'absolute',
     left: 7,
@@ -175,6 +290,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  tileButton: {
+    flex: 1,
   },
   reelBadge: {
     position: 'absolute',
@@ -191,6 +309,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  reelLabel: {
+    position: 'absolute',
+    left: 8,
+    top: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(17,24,39,0.7)',
+  },
+  reelLabelText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
   emptyState: {
     flex: 1,

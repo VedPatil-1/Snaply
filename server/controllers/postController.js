@@ -7,7 +7,7 @@ const getCurrentUserId = async () => {
   return user ? user._id : null;
 };
 
-const populatePost = (post, currentUserId) => {
+const populatePost = (post, currentUserId, savedPostIds = []) => {
   const plainPost = post.toObject ? post.toObject() : post;
 
   return {
@@ -19,7 +19,7 @@ const populatePost = (post, currentUserId) => {
     isLiked: currentUserId
       ? (plainPost.likes || []).some((userId) => String(userId) === String(currentUserId))
       : false,
-    isSaved: false,
+    isSaved: savedPostIds.some((id) => String(id) === String(plainPost._id)),
     user: plainPost.user && typeof plainPost.user === 'object'
       ? {
           ...plainPost.user,
@@ -30,8 +30,8 @@ const populatePost = (post, currentUserId) => {
   };
 };
 
-const withFollowState = (post, currentUser) => {
-  const serialized = populatePost(post, currentUser?._id);
+const withFollowState = (post, currentUser, savedPostIds = []) => {
+  const serialized = populatePost(post, currentUser?._id, currentUser?.savedPosts || []);
   if (serialized.user && currentUser) {
     serialized.user.isFollowing = (currentUser.following || []).some(
       (followedId) => String(followedId) === String(serialized.user._id)
@@ -93,8 +93,8 @@ const getPostById = async (req, res, next) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    const currentUser = currentUserId ? await User.findById(currentUserId).select('following').lean() : null;
-    return res.status(200).json(withFollowState(post, currentUser));
+    const currentUser = currentUserId ? await User.findById(currentUserId).select('following savedPosts').lean() : null;
+    return res.status(200).json(withFollowState(post, currentUser, currentUser?.savedPosts || []));
   } catch (error) {
     next(error);
   }
@@ -111,8 +111,8 @@ const getPostsByUser = async (req, res, next) => {
       })
       .sort({ createdAt: -1 });
 
-    const currentUser = currentUserId ? await User.findById(currentUserId).select('following').lean() : null;
-    res.status(200).json(posts.map((post) => withFollowState(post, currentUser)));
+    const currentUser = currentUserId ? await User.findById(currentUserId).select('following savedPosts').lean() : null;
+    res.status(200).json(posts.map((post) => withFollowState(post, currentUser, currentUser?.savedPosts || [])));
   } catch (error) {
     next(error);
   }
@@ -150,10 +150,11 @@ const createPost = async (req, res, next) => {
 
 const deletePost = async (req, res, next) => {
   try {
-    const post = await Post.findById(req.params.id);
+    const currentUserId = req.body?.userId || req.query.userId;
+    const post = await Post.findOne({ _id: req.params.id, user: currentUserId });
 
     if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
+      return res.status(404).json({ message: 'Post not found or not owned by current user' });
     }
 
     await post.deleteOne();

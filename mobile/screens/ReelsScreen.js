@@ -54,8 +54,19 @@ export default function ReelsScreen({
     useState(null);
 
   const flatListRef = useRef(null);
+  const activeReelIdRef = useRef(null);
   const isFocused = useIsFocused();
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
+
+  const dedupeReels = useCallback((items) => {
+    const seenIds = new Set();
+    return items.filter((reel) => {
+      const reelId = String(reel?._id || '').trim();
+      if (!reelId || seenIds.has(reelId)) return false;
+      seenIds.add(reelId);
+      return true;
+    });
+  }, []);
 
   /*
    * Load reels.
@@ -75,12 +86,13 @@ export default function ReelsScreen({
         ? response
         : [];
 
-      const validReels =
+      const validReels = dedupeReels(
         serverReels.filter(
           (reel) =>
             reel?.videoUrl ||
             reel?.mediaUrl
-        );
+        )
+      );
 
       console.log(
         '[Snaply] reels loaded:',
@@ -88,11 +100,15 @@ export default function ReelsScreen({
       );
 
       setCurrentUser(user);
-      setReels(validReels);
 
-      let startingIndex = 0;
+      const preservedReelId = activeReelIdRef.current;
+      let startingIndex = preservedReelId
+        ? validReels.findIndex(
+            (reel) => String(reel._id) === String(preservedReelId)
+          )
+        : -1;
 
-      if (initialReelId) {
+      if (startingIndex < 0 && initialReelId) {
         const foundIndex =
           validReels.findIndex(
             (reel) =>
@@ -105,10 +121,14 @@ export default function ReelsScreen({
         }
       }
 
+      if (startingIndex < 0) startingIndex = 0;
+
+      activeReelIdRef.current = validReels[startingIndex]?._id || null;
+      setReels(validReels);
       setActiveIndex(startingIndex);
 
       /*
-       * Scroll after FlatList receives the data.
+       * Scroll after FlatList receives refreshed data, preserving the visible reel.
        */
       setTimeout(() => {
         flatListRef.current?.scrollToIndex({
@@ -131,7 +151,7 @@ export default function ReelsScreen({
     } finally {
       setLoading(false);
     }
-  }, [initialReelId]);
+  }, [dedupeReels, initialReelId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -190,6 +210,7 @@ export default function ReelsScreen({
         index = 0;
       }
 
+      activeReelIdRef.current = reels[index]?._id || null;
       setActiveIndex(index);
     },
     [reels.length, windowHeight]
@@ -209,6 +230,7 @@ export default function ReelsScreen({
         first &&
         typeof first.index === 'number'
       ) {
+        activeReelIdRef.current = first.item?._id || null;
         setActiveIndex(first.index);
       }
     }

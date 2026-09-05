@@ -5,6 +5,7 @@ const path = require('path');
 const User = require('../models/User');
 const Post = require('../models/Post');
 const Reel = require('../models/Reel');
+const Story = require('../models/Story');
 const connectDB = require('../config/db');
 
 dotenv.config();
@@ -319,6 +320,34 @@ const samplePosts = [
   },
 ];
 
+const sampleStories = [
+  {
+    user: 'marcus',
+    mediaUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=85',
+    caption: 'A quiet morning on the road.',
+  },
+  {
+    user: 'sofia',
+    mediaUrl: 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=900&q=85',
+    caption: 'Little details from today.',
+  },
+  {
+    user: 'liam',
+    mediaUrl: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=85',
+    caption: 'Found the perfect view.',
+  },
+  {
+    user: 'priya',
+    mediaUrl: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=85',
+    caption: 'Color everywhere today.',
+  },
+  {
+    user: 'maya',
+    mediaUrl: 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=85',
+    caption: 'A slow Sunday morning.',
+  },
+];
+
 const normalizeUsers = async () => {
   const users = await User.find({});
   const userMap = new Map(users.map((user) => [user.username, user]));
@@ -429,6 +458,27 @@ const normalizeReels = async () => {
   }
 };
 
+const normalizeStories = async () => {
+  const allUsers = await User.find({});
+  const idMap = new Map(allUsers.map((user) => [user.username, user._id]));
+
+  for (const entry of sampleStories) {
+    const userId = idMap.get(entry.user);
+    if (!userId) continue;
+
+    const existing = await Story.findOne({ user: userId, caption: entry.caption });
+    if (!existing) {
+      await Story.create({
+        user: userId,
+        mediaUrl: entry.mediaUrl,
+        mediaType: 'image',
+        caption: entry.caption,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+    }
+  }
+};
+
 const seedDatabase = async () => {
   try {
     if (process.env.NODE_ENV === 'production') {
@@ -441,13 +491,15 @@ const seedDatabase = async () => {
     await User.deleteMany({});
     await Post.deleteMany({});
     await Reel.deleteMany({});
+    await Story.deleteMany({});
 
     await normalizeUsers();
     await attachRelationships();
     await normalizePosts();
     await normalizeReels();
+    await normalizeStories();
 
-    console.log('Seeded 10 users, 15 posts, and 10 reels successfully.');
+    console.log('Seeded 10 users, 15 posts, 10 reels, and 5 stories successfully.');
     process.exit(0);
   } catch (error) {
     console.error('Seed failed:', error);
@@ -455,4 +507,13 @@ const seedDatabase = async () => {
   }
 };
 
-seedDatabase();
+module.exports = {
+  sampleUsers,
+  samplePosts,
+  sampleReels,
+  seedDatabase,
+};
+
+if (require.main === module) {
+  seedDatabase();
+}

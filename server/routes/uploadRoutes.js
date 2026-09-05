@@ -2,12 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const multer = require('multer');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const ffmpegStatic = require('ffmpeg-static');
 const {
   isCloudinaryConfigured,
   uploadBuffer,
 } = require('../config/cloudinary');
 
 const router = express.Router();
+const execFileAsync = promisify(execFile);
 const uploadDir = path.join(__dirname, '..', 'uploads');
 const reelUploadDir = path.join(uploadDir, 'reels');
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -88,6 +92,22 @@ const getCloudinaryUpload = async (file, resourceType, folder) => {
   };
 };
 
+const deriveCloudinaryThumbnail = (videoUrl) => String(videoUrl || '')
+  .replace('/video/upload/', '/video/upload/so_0/')
+  .replace(/\.[^./?]+(?=\?.*)?$/i, '.jpg');
+
+const generateLocalReelThumbnail = async (videoPath, thumbnailPath) => {
+  const ffmpegPath = process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg';
+  try {
+    await execFileAsync(ffmpegPath, [
+      '-y', '-ss', '0', '-i', videoPath, '-frames:v', '1', '-q:v', '2', thumbnailPath,
+    ]);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
 const respondWithUploadedFile = async (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ message: 'A file is required.' });
@@ -122,20 +142,33 @@ const respondWithUploadedReel = async (req, res, next) => {
   try {
     if (useCloudinary) {
       const uploaded = await getCloudinaryUpload(req.file, 'video', 'snaply/reels');
+      const thumbnailUrl = deriveCloudinaryThumbnail(uploaded.mediaUrl);
       return res.status(201).json({
         success: true,
         mediaUrl: uploaded.mediaUrl,
         url: uploaded.mediaUrl,
+        thumbnailUrl,
+        posterUrl: thumbnailUrl,
         fileName: uploaded.fileName,
         mimeType: req.file.mimetype,
       });
     }
 
     const mediaUrl = `/uploads/reels/${req.file.filename}`;
+    const thumbnailFileName = `${path.basename(req.file.filename, path.extname(req.file.filename))}.jpg`;
+    const thumbnailPath = path.join(reelUploadDir, thumbnailFileName);
+    const thumbnailGenerated = await generateLocalReelThumbnail(req.file.path, thumbnailPath);
+    if (!thumbnailGenerated) {
+      await fs.promises.rm(req.file.path, { force: true });
+      return res.status(503).json({ message: 'A reel thumbnail could not be generated. Configure Cloudinary or install FFmpeg on the server.' });
+    }
+    const thumbnailUrl = `/uploads/reels/${thumbnailFileName}`;
     return res.status(201).json({
       success: true,
       mediaUrl,
       url: mediaUrl,
+      thumbnailUrl,
+      posterUrl: thumbnailUrl,
       fileName: req.file.filename,
       mimeType: req.file.mimetype,
     });
@@ -150,9 +183,9 @@ router.post('/file', requireCloudinaryInProduction, upload.single('file'), respo
 router.post('/reel-video', requireCloudinaryInProduction, (req, _res, next) => {
   console.log('[Snaply] reel upload request received');
   next();
-}, reelUpload.single('file'), (req, res) => {
+}, reelUpload.single('file'), (req, res, next) => {
   console.log('[Snaply] reel upload success');
-  respondWithUploadedReel(req, res);
+  respondWithUploadedReel(req, res, next);
 });
 
 module.exports = router;

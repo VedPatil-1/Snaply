@@ -1,23 +1,23 @@
 import React, { useEffect } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { getReelThumbnail, resolveMediaThumbnailUrl, resolveMediaUrl } from '../config';
+import { resolveMediaUrl, resolveReelThumbnailUrl } from '../config';
 
-export default function ReelGridPreview({ reel, style }) {
-  const videoUrl = resolveMediaUrl(reel?.videoUrl || reel?.mediaUrl);
-  const thumbnailUrl = resolveMediaThumbnailUrl(reel) || getReelThumbnail(videoUrl);
-  const player = useVideoPlayer(videoUrl || null, (instance) => {
+export default function ReelGridPreview({ reel, style, allowVideoPreview = false }) {
+  const videoUrl = resolveMediaUrl(reel?.videoUrl || reel?.mediaUrl || '');
+  const thumbnailUrl = resolveReelThumbnailUrl(reel);
+  const player = allowVideoPreview && videoUrl ? useVideoPlayer(videoUrl, (instance) => {
     if (!instance) return;
     instance.muted = true;
     instance.loop = false;
-  });
+  }) : null;
 
   useEffect(() => {
     if (!player) return;
     try {
       player.pause();
     } catch (error) {
-      // The preview player may be released during list recycling.
+      // Keep the preview paused until the reel is opened.
     }
   }, [player]);
 
@@ -25,7 +25,7 @@ export default function ReelGridPreview({ reel, style }) {
     return <Image source={{ uri: thumbnailUrl }} style={[styles.fill, style]} resizeMode="cover" />;
   }
 
-  if (player && videoUrl) {
+  if (allowVideoPreview && player && videoUrl) {
     return <VideoView player={player} style={[styles.fill, style]} contentFit="cover" nativeControls={false} />;
   }
 

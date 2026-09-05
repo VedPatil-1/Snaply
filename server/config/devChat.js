@@ -7,7 +7,7 @@ const getNumber = (value, fallback) => {
 
 module.exports = {
   DEV_CHAT_SIMULATION: isDevelopment && String(process.env.DEV_CHAT_SIMULATION || 'true').toLowerCase() !== 'false',
-  DEV_SIMULATED_USERS: ['ethan', 'sofia', 'emma', 'noah'],
+  DEV_SIMULATED_USERS: ['ethan', 'sofia'],
   DEV_OFFLINE_USERS: ['liam', 'marcus'],
   DEV_REPLY_DELAY_MS: getNumber(process.env.DEV_REPLY_DELAY_MS, 1500),
   DEV_TYPING_DELAY_MS: getNumber(process.env.DEV_TYPING_DELAY_MS, 900),

@@ -17,12 +17,24 @@ const getCurrentUserId = async () => {
   return user ? user._id : null;
 };
 
+const getFallbackThumbnailUrl = (videoUrl) => {
+  const value = String(videoUrl || '').trim();
+  if (!value) return null;
+  if (/cloudinary\.com/i.test(value)) {
+    return value.replace(/\.mp4(\?.*)?$/i, '.jpg');
+  }
+  return null;
+};
+
 const serializeReel = (reel, currentUserId = null, currentUserData = null) => {
   const plain = reel.toObject ? reel.toObject() : reel;
   const user = plain.user && typeof plain.user === 'object' ? plain.user : null;
+  const fallbackThumbnailUrl = plain.thumbnailUrl || plain.posterUrl || getFallbackThumbnailUrl(plain.videoUrl || plain.mediaUrl);
 
   return {
     ...plain,
+    thumbnailUrl: plain.thumbnailUrl || fallbackThumbnailUrl,
+    posterUrl: plain.posterUrl || fallbackThumbnailUrl,
     likesCount: Array.isArray(plain.likes) ? plain.likes.length : 0,
     commentsCount: Array.isArray(plain.comments) ? plain.comments.length : 0,
     isLiked: currentUserId
@@ -90,7 +102,7 @@ const getReelById = async (req, res, next) => {
 const createReel = async (req, res, next) => {
   try {
     console.log('[Snaply] reel create request received');
-    const { userId, videoUrl, caption = '', musicName = '' } = req.body;
+    const { userId, videoUrl, thumbnailUrl = null, caption = '', musicName = '' } = req.body;
 
     if (isInvalidVideoUrl(videoUrl)) {
       return res.status(400).json({ message: 'videoUrl must be an HTTPS URL or an existing local reel file.' });
@@ -105,6 +117,7 @@ const createReel = async (req, res, next) => {
     const reel = await Reel.create({
       user: resolvedUserId,
       videoUrl,
+      thumbnailUrl,
       caption,
       musicName,
       likes: [],
@@ -115,6 +128,18 @@ const createReel = async (req, res, next) => {
     const populated = await reel.populate('user', 'name username profilePicture bio followers following');
     console.log('[Snaply] reel create success:', reel._id);
     return res.status(201).json(serializeReel(populated, resolvedUserId, currentUserData));
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteReel = async (req, res, next) => {
+  try {
+    const currentUserId = req.body?.userId || req.query.userId;
+    const reel = await Reel.findOne({ _id: req.params.id, user: currentUserId });
+    if (!reel) return res.status(404).json({ message: 'Reel not found or not owned by current user' });
+    await reel.deleteOne();
+    return res.status(200).json({ message: 'Reel deleted successfully', reelId: reel._id });
   } catch (error) {
     next(error);
   }
@@ -252,6 +277,7 @@ module.exports = {
   getReels,
   getReelById,
   getReelsByUser,
+  deleteReel,
   createReel,
   toggleLike,
   getComments,

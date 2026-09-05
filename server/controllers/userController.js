@@ -1,21 +1,34 @@
 const User = require('../models/User');
+const Post = require('../models/Post');
+const Reel = require('../models/Reel');
 const { createNotification } = require('./notificationController');
 
 const normalizeUsername = (value = '') => String(value).trim().toLowerCase();
 const DEVELOPMENT_USERNAME = 'alicia';
+
+const getOwnedContentCount = async (userId) => {
+  const [postsCount, reelsCount] = await Promise.all([
+    Post.countDocuments({ user: userId }),
+    Reel.countDocuments({ user: userId }),
+  ]);
+  return postsCount + reelsCount;
+};
 
 const getCurrentUser = async (req, res, next) => {
   try {
     const currentUser = await User.findOne({ username: 'alicia' })
       .populate('followers', 'name username profilePicture')
       .populate('following', 'name username profilePicture')
-      .populate('savedReels', 'videoUrl caption musicName user');
+      .populate('savedReels', 'videoUrl thumbnailUrl caption musicName user likes comments views createdAt')
+      .populate('savedPosts', 'mediaUrl mediaType caption user');
 
     if (!currentUser) {
       return res.status(404).json({ message: 'Current development user not found' });
     }
 
-    return res.status(200).json(currentUser.toJSON());
+    const payload = currentUser.toJSON();
+    payload.postsCount = await getOwnedContentCount(currentUser._id);
+    return res.status(200).json(payload);
   } catch (error) {
     next(error);
   }
@@ -44,9 +57,12 @@ const updateCurrentUser = async (req, res, next) => {
     const populated = await User.findById(currentUser._id)
       .populate('followers', 'name username profilePicture')
       .populate('following', 'name username profilePicture')
-      .populate('savedReels', 'videoUrl caption musicName user');
+      .populate('savedReels', 'videoUrl thumbnailUrl caption musicName user likes comments views createdAt')
+      .populate('savedPosts', 'mediaUrl mediaType caption user');
 
-    return res.status(200).json(populated.toJSON());
+    const payload = populated.toJSON();
+    payload.postsCount = await getOwnedContentCount(currentUser._id);
+    return res.status(200).json(payload);
   } catch (error) {
     next(error);
   }
@@ -57,7 +73,7 @@ const getUserById = async (req, res, next) => {
     const user = await User.findById(req.params.id)
       .populate('followers', 'name username profilePicture')
       .populate('following', 'name username profilePicture')
-      .populate('savedReels', 'videoUrl caption musicName user');
+      .populate('savedReels', 'videoUrl thumbnailUrl caption musicName user likes comments views createdAt');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -65,6 +81,7 @@ const getUserById = async (req, res, next) => {
 
     const currentUser = await User.findOne({ username: 'alicia' }).select('following').lean();
     const payload = user.toJSON();
+    payload.postsCount = await getOwnedContentCount(user._id);
     payload.isFollowing = Boolean(
       currentUser?.following?.some((followedId) => String(followedId) === String(user._id))
     );
@@ -118,19 +135,20 @@ const toggleSavedReel = async (req, res, next) => {
     }
 
     const alreadySaved = user.savedReels.some((savedId) => String(savedId) === String(reelId));
-    if (alreadySaved) {
+    const shouldSave = req.method === 'POST' ? true : req.method === 'DELETE' ? false : !alreadySaved;
+    if (!shouldSave) {
       user.savedReels = user.savedReels.filter((savedId) => String(savedId) !== String(reelId));
-    } else {
+    } else if (!alreadySaved) {
       user.savedReels.push(reelId);
     }
 
     await user.save();
 
     const populated = await User.findById(user._id)
-      .populate('savedReels', 'videoUrl caption musicName user');
+      .populate('savedReels', 'videoUrl thumbnailUrl caption musicName user likes comments views createdAt');
 
     return res.status(200).json({
-      isSaved: !alreadySaved,
+      isSaved: shouldSave,
       savedReels: populated.savedReels || [],
       user: populated.toJSON(),
     });
@@ -165,9 +183,10 @@ const toggleSavedPost = async (req, res, next) => {
     }
 
     const alreadySaved = user.savedPosts.some((savedId) => String(savedId) === String(postId));
-    if (alreadySaved) {
+    const shouldSave = req.method === 'POST' ? true : req.method === 'DELETE' ? false : !alreadySaved;
+    if (!shouldSave) {
       user.savedPosts = user.savedPosts.filter((savedId) => String(savedId) !== String(postId));
-    } else {
+    } else if (!alreadySaved) {
       user.savedPosts.push(postId);
     }
 
@@ -176,7 +195,7 @@ const toggleSavedPost = async (req, res, next) => {
     const populated = await User.findById(user._id).populate('savedPosts', 'mediaUrl caption user');
 
     return res.status(200).json({
-      isSaved: !alreadySaved,
+      isSaved: shouldSave,
       savedPosts: populated.savedPosts || [],
       user: populated.toJSON(),
     });

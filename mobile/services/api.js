@@ -7,6 +7,35 @@ export async function uploadImageAsset(asset, onProgress) {
   const mimeType = asset.mimeType || 'image/jpeg';
   if (!mimeType.startsWith('image/')) throw new Error('Please select an image file.');
 
+  if (asset.file) {
+    const formData = new FormData();
+    formData.append('image', asset.file, asset.fileName || asset.file.name || 'image.jpg');
+
+    const response = await fetch(`${API_BASE_URL}/uploads/image`, {
+      method: 'POST',
+      body: formData,
+      headers: { Accept: 'application/json' },
+    });
+
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error(`Image upload returned an invalid response (HTTP ${response.status}).`);
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.message || `Image upload failed (HTTP ${response.status}).`);
+    }
+
+    const mediaUrl = data?.mediaUrl || data?.url || data?.filePath;
+    if (!mediaUrl || /^(file:|blob:|content:)/i.test(mediaUrl)) {
+      throw new Error('Image upload did not return a usable server URL.');
+    }
+
+    return { ...data, mediaUrl };
+  }
+
   const file = new File(asset.uri);
   const response = await file.upload(`${API_BASE_URL}/uploads/image`, {
     httpMethod: 'POST',

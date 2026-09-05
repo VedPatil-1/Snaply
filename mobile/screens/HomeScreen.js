@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   RefreshControl,
   ScrollView,
@@ -10,21 +11,56 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import PostCard from '../components/PostCard';
 import StoryStrip from '../components/StoryStrip';
 import StoryViewer from '../components/StoryViewer';
 import { apiRequest } from '../services/api';
 import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 
+function storiesToViewerGroups(storyRows) {
+  return (Array.isArray(storyRows) ? storyRows : [])
+    .filter((row) => row?.isCurrentUser || Array.isArray(row?.stories) && row.stories.length)
+    .map((row) => ({
+      userId: row.userId || (row.isCurrentUser ? row.id.replace(/^create-/, '') : row.id),
+      name: row.name,
+      label: row.label,
+      avatar: row.avatar,
+      isCurrentUser: Boolean(row.isCurrentUser),
+      viewed: Boolean(row.viewed),
+      stories: (row.stories || []).map((story) => ({
+        ...story,
+        name: row.name,
+        label: row.label,
+        avatar: row.avatar,
+        userId: row.userId,
+        isCurrentUser: Boolean(row.isCurrentUser),
+      })),
+    }));
+}
+
 export default function HomeScreen({ navigation }) {
+  const screenFocused = useIsFocused();
   const [currentUser, setCurrentUser] = useState(null);
   const [posts, setPosts] = useState([]);
   const [stories, setStories] = useState([]);
-  const [storyIndex, setStoryIndex] = useState(0);
+  const [currentUserIndex, setCurrentUserIndex] = useState(0);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [usersWithStories, setUsersWithStories] = useState([]);
   const [isStoryViewerOpen, setIsStoryViewerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  const openStoryGroup = useCallback((storyGroup, storyIndex) => {
+    const groups = storiesToViewerGroups(stories);
+    const storyGroupId = String(storyGroup.userId || storyGroup.id || '');
+    const nextUserIndex = Math.max(0, groups.findIndex((group) => String(group.userId) === storyGroupId));
+    setUsersWithStories(groups);
+    setCurrentUserIndex(nextUserIndex);
+    setCurrentStoryIndex(0);
+    setIsStoryViewerOpen(true);
+  }, [stories]);
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
@@ -36,15 +72,33 @@ export default function HomeScreen({ navigation }) {
 
       const [feed, storyResponse] = await Promise.all([
         apiRequest(`/posts/feed?userId=${user._id}`),
-        apiRequest('/stories'),
+        apiRequest(`/stories?userId=${user._id}`),
       ]);
 
       setPosts(Array.isArray(feed) ? feed : []);
-      setStories(Array.isArray(storyResponse) ? storyResponse : []);
+      const nextStories = Array.isArray(storyResponse) ? storyResponse : [];
+
+      if (user && !nextStories.some((story) => String(story?.id || story?._id) === String(user._id) || story?.isCurrentUser)) {
+        nextStories.unshift({
+          id: String(user._id),
+          label: 'your story',
+          name: user.name || 'Your story',
+          avatar: user.profilePicture,
+          mediaUrl: user.profilePicture,
+          caption: 'Add to your story',
+          viewed: true,
+          isCurrentUser: true,
+          isCreateEntry: true,
+        });
+      }
+
+      setStories(nextStories);
+      setUsersWithStories(storiesToViewerGroups(nextStories));
     } catch (loadError) {
       setError(loadError.message || 'Unable to load home feed.');
       setPosts([]);
       setStories([]);
+      setUsersWithStories([]);
       console.warn('Home feed error:', loadError.message);
     } finally {
       setLoading(false);
@@ -58,6 +112,10 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     const unsubscribePost = subscribeToPostUpdates((updatedPost) => {
+      if (updatedPost?.deleted) {
+        setPosts((prev) => prev.filter((post) => String(post._id) !== String(updatedPost._id)));
+        return;
+      }
       setPosts((prev) => prev.map((post) => (
         String(post._id) === String(updatedPost._id)
           ? { ...post, ...updatedPost, user: { ...post.user, ...(updatedPost.user || {}), isFollowing: post.user?.isFollowing } }
@@ -93,6 +151,20 @@ export default function HomeScreen({ navigation }) {
       publishPostUpdate(updatedPost);
     } catch (loadError) {
       console.warn('Like toggle failed:', loadError.message);
+    }
+  };
+
+  const handleSave = async (postId, nextSaved) => {
+    if (!currentUser) return;
+    try {
+      const updated = await apiRequest(`/users/${currentUser._id}/saved-posts/${postId}`, {
+        method: nextSaved ? 'POST' : 'DELETE',
+        body: JSON.stringify({ userId: currentUser._id, postId }),
+      });
+      setPosts((prev) => prev.map((post) => String(post._id) === String(postId) ? { ...post, isSaved: Boolean(updated?.isSaved) } : post));
+      publishPostUpdate({ ...updated?.post, _id: postId, isSaved: Boolean(updated?.isSaved) });
+    } catch (error) {
+      console.warn('Save toggle failed:', error.message);
     }
   };
 
@@ -193,6 +265,61 @@ export default function HomeScreen({ navigation }) {
     navigation.navigate('UserProfile', { userId });
   };
 
+  const handleStoryViewed = useCallback(async (story) => {
+    if (!currentUser || !story?.id || story?.isCurrentUser) return;
+    try {
+      await apiRequest(`/stories/${story.id}/view`, {
+        method: 'POST',
+        body: JSON.stringify({ userId: currentUser._id }),
+      });
+      setStories((previous) => previous.map((item) => {
+        if (String(item.userId || item.id) !== String(story.userId || story.id)) return item;
+        const nextStoryList = (item.stories || []).map((entry) => String(entry.id) === String(story.id) ? { ...entry, viewed: true } : entry);
+        return { ...item, stories: nextStoryList, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed) };
+      }));
+      setUsersWithStories((previous) => previous.map((group) => {
+        if (String(group.userId) !== String(story.userId)) return group;
+        const nextStoryList = group.stories.map((entry) => String(entry.id) === String(story.id) ? { ...entry, viewed: true } : entry);
+        return { ...group, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed), stories: nextStoryList };
+      }));
+    } catch (error) {
+      console.warn('Story view update failed:', error.message);
+    }
+  }, [currentUser]);
+
+  const handleStoryDelete = useCallback((story) => {
+    if (!currentUser || !story?.id || !story.isCurrentUser) return;
+    Alert.alert('Delete story?', 'This Story will be permanently removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiRequest(`/stories/${story.id}`, {
+              method: 'DELETE',
+              body: JSON.stringify({ userId: currentUser._id }),
+            });
+            setUsersWithStories((previous) => previous.map((group) => String(group.userId) === String(story.userId)
+              ? { ...group, stories: group.stories.filter((entry) => String(entry.id) !== String(story.id)) }
+              : group).filter((group) => group.stories.length || group.isCurrentUser));
+            setStories((previous) => previous.map((entry) => {
+              if (!entry.isCurrentUser) return entry;
+              const remaining = (entry.stories || []).filter((item) => String(item.id) !== String(story.id));
+              return remaining.length
+                ? { ...entry, id: remaining[0].id, stories: remaining, mediaUrl: remaining[0].mediaUrl, mediaType: remaining[0].mediaType, caption: remaining[0].caption, viewed: true, isCreateEntry: false }
+                : { ...entry, id: `create-${currentUser._id}`, stories: [], mediaUrl: currentUser.profilePicture, mediaType: null, caption: 'Add to your story', viewed: true, isCreateEntry: true };
+            }));
+              setCurrentStoryIndex(0);
+              setIsStoryViewerOpen(false);
+          } catch (deleteError) {
+            Alert.alert('Delete failed', deleteError.message || 'Unable to delete story.');
+          }
+        },
+      },
+    ]);
+  }, [currentUser]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadFeed();
@@ -243,10 +370,16 @@ export default function HomeScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#111827" />}
           showsVerticalScrollIndicator={false}
         >
-          <StoryStrip stories={stories} onOpenStory={(index) => {
-            setStoryIndex(index);
-            setIsStoryViewerOpen(true);
-          }} />
+          <StoryStrip
+            stories={stories}
+            currentUser={currentUser}
+            onAddStory={() => navigation.navigate('Create', { mode: 'story' })}
+            onOpenStory={(index) => {
+              const nextStory = stories[index];
+              if (!nextStory) return;
+              openStoryGroup(nextStory, index);
+            }}
+          />
 
           {posts.length === 0 ? (
             <View style={styles.centerState}>
@@ -263,6 +396,7 @@ export default function HomeScreen({ navigation }) {
                 onFollowToggle={handleFollowToggle}
                 onAddComment={handleAddComment}
                 onShare={handleShare}
+                onSave={handleSave}
                 onProfileClick={handleProfileClick}
               />
             ))
@@ -272,10 +406,14 @@ export default function HomeScreen({ navigation }) {
 
       <StoryViewer
         visible={isStoryViewerOpen}
-        stories={stories}
-        currentIndex={storyIndex}
+        screenFocused={screenFocused}
+        usersWithStories={usersWithStories}
+        currentUserIndex={currentUserIndex}
+        currentStoryIndex={currentStoryIndex}
         onClose={() => setIsStoryViewerOpen(false)}
-        onChangeIndex={setStoryIndex}
+        onChangePosition={(nextUserIndex, nextStoryIndex) => { setCurrentUserIndex(nextUserIndex); setCurrentStoryIndex(nextStoryIndex); }}
+        onViewed={handleStoryViewed}
+        onDeleteStory={handleStoryDelete}
       />
     </SafeAreaView>
   );

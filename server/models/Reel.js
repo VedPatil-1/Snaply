@@ -35,6 +35,10 @@ const reelSchema = new mongoose.Schema(
         message: 'videoUrl must be an HTTP(S) URL or a server /uploads/ path.',
       },
     },
+    thumbnailUrl: {
+      type: String,
+      default: null,
+    },
     caption: {
       type: String,
       default: '',

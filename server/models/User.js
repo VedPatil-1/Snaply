@@ -38,6 +38,14 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Post',
     }],
+    viewedStoryUsers: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    }],
+    viewedStories: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Story',
+    }],
   },
   {
     timestamps: {
