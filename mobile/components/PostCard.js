@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { resolveMediaUrl } from '../config';
+import { resolveMediaUrl, resolvePostMediaUrl } from '../config';
 
 export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onProfileClick }) {
   const [commentText, setCommentText] = useState('');
@@ -28,6 +28,16 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       .map((comment) => [String(comment._id), comment])).values()].reverse()
     : [];
   const likesCount = post.likesCount || post.likes?.length || 0;
+  const resolvedMediaUrl = resolvePostMediaUrl(post);
+
+  useEffect(() => {
+    console.log('[Snaply] post media', {
+      id: post?._id,
+      mediaType: post?.mediaType,
+      original: post?.mediaUrl || post?.imageUrl || post?.media?.url || post?.image || post?.url,
+      resolved: resolvedMediaUrl,
+    });
+  }, [post?._id, post?.mediaType, resolvedMediaUrl]);
 
   useEffect(() => {
     if (showComments) console.log('[Snaply] comments rendered:', comments.length);
@@ -104,7 +114,7 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap}>
-        <Image source={{ uri: post.mediaUrl }} style={styles.image} resizeMode="cover" />
+        {resolvedMediaUrl ? <Image source={{ uri: resolvedMediaUrl }} style={styles.image} resizeMode="cover" /> : <View style={[styles.image, styles.mediaFallback]} />}
         {showHeart ? (
           <Animated.View
             pointerEvents="none"
@@ -230,6 +240,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 360,
     backgroundColor: '#e5e7eb',
+  },
+  mediaFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heartOverlay: {
     position: 'absolute',

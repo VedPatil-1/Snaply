@@ -1,5 +1,7 @@
 import React from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { resolvePostMediaUrl } from '../config';
+import ReelGridPreview from './ReelGridPreview';
 
 export default function ProfileGrid({ posts = [], navigation }) {
   if (!posts.length) {
@@ -32,11 +34,17 @@ export default function ProfileGrid({ posts = [], navigation }) {
       columnWrapperStyle={styles.columnWrapper}
       renderItem={({ item }) => (
         <TouchableOpacity onPress={() => handleTilePress(item)} style={styles.tileWrapper}>
-          <Image 
-            source={{ uri: item.mediaUrl || item.videoUrl }} 
-            style={styles.postTile} 
-            resizeMode="cover" 
-          />
+          {item.videoUrl ? (
+            <ReelGridPreview reel={item} style={styles.postTile} />
+          ) : resolvePostMediaUrl(item) ? (
+            <Image
+              source={{ uri: resolvePostMediaUrl(item) }}
+              style={styles.postTile}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.mediaFallback}><Text style={styles.videoIcon}>▶</Text></View>
+          )}
           {item.videoUrl && (
             <View style={styles.videoIndicator}>
               <Text style={styles.videoIcon}>▶</Text>
@@ -65,6 +73,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#e5e7eb',
+  },
+  mediaFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#d1d5db',
   },
   videoIndicator: {
     position: 'absolute',

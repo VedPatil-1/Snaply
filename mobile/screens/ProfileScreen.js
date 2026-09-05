@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../components/ProfileHeader';
-import { DEV_USERNAME } from '../config';
+import { DEV_USERNAME, resolvePostMediaUrl } from '../config';
+import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
 import { publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
@@ -144,7 +145,13 @@ export default function ProfileScreen({ navigation }) {
         ListEmptyComponent={<View style={styles.placeholderBox}><Text style={styles.placeholderText}>{activeTab === 'reels' ? 'No reels yet' : 'No posts yet'}</Text></View>}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.profileTile} onPress={() => navigation.navigate(activeTab === 'reels' ? 'ReelViewer' : 'PostDetail', activeTab === 'reels' ? { reelId: item._id } : { postId: item._id })}>
-            <Image source={{ uri: item.mediaUrl || item.videoUrl }} style={styles.profileTileImage} resizeMode="cover" />
+            {activeTab === 'reels' ? (
+              <ReelGridPreview reel={item} style={styles.profileTileImage} />
+            ) : resolvePostMediaUrl(item) ? (
+              <Image source={{ uri: resolvePostMediaUrl(item) }} style={styles.profileTileImage} resizeMode="cover" />
+            ) : (
+              <View style={[styles.profileTileImage, styles.mediaFallback]} />
+            )}
             {activeTab === 'reels' ? <View style={styles.videoIndicator}><Text style={styles.profileTileText}>▶</Text></View> : null}
           </TouchableOpacity>
         )}
@@ -231,6 +238,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#e5e7eb',
+  },
+  mediaFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#d1d5db',
   },
   videoIndicator: {
     position: 'absolute',

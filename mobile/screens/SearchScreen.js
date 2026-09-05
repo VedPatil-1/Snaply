@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../services/api';
 import { publishUserUpdate, subscribeToUserUpdates } from '../services/sync';
-import { resolveMediaUrl } from '../config';
+import { resolveMediaThumbnailUrl, resolveMediaUrl, resolvePostMediaUrl } from '../config';
 
 const debounce = (fn, delay) => {
   let timeout;
@@ -54,7 +54,9 @@ export default function SearchScreen({ navigation }) {
           _id: reel._id,
           type: 'reel',
           caption: reel.caption,
-          mediaUrl: reel.videoUrl,
+          mediaUrl: reel.mediaUrl,
+          thumbnailUrl: reel.thumbnailUrl || reel.posterUrl || reel.thumbnail || reel.poster,
+          videoUrl: reel.videoUrl,
           user: reel.user,
         })),
       ];
@@ -243,7 +245,7 @@ export default function SearchScreen({ navigation }) {
 
           return (
             <TouchableOpacity style={styles.postRow} onPress={() => navigation.navigate('PostDetail', { postId: item._id })}>
-              <Image source={{ uri: item.mediaUrl }} style={styles.postThumb} resizeMode="cover" />
+              <Image source={{ uri: resolvePostMediaUrl(item) }} style={styles.postThumb} resizeMode="cover" />
               <View style={styles.postCopy}>
                 <Text style={styles.postUser}>@{item.user?.username || 'user'}</Text>
                 <Text style={styles.postCaption} numberOfLines={2}>{item.caption || 'Post'}</Text>
@@ -296,7 +298,11 @@ export default function SearchScreen({ navigation }) {
               ? navigation.navigate('PostDetail', { postId: item._id })
               : navigation.navigate('ReelViewer', { reelId: item._id })}
           >
-            <Image source={{ uri: item.mediaUrl }} style={styles.gridImage} resizeMode="cover" />
+            {resolveMediaThumbnailUrl(item) ? (
+              <Image source={{ uri: resolveMediaThumbnailUrl(item) }} style={styles.gridImage} resizeMode="cover" />
+            ) : (
+              <View style={styles.mediaFallback}><Text style={styles.mediaFallbackIcon}>▶</Text></View>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -462,5 +468,16 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 8,
     backgroundColor: '#e5e7eb',
+  },
+  mediaFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#d1d5db',
+  },
+  mediaFallbackIcon: {
+    color: '#6b7280',
+    fontSize: 18,
   },
 });

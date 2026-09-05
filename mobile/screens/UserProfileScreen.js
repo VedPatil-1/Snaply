@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../components/ProfileHeader';
+import { resolvePostMediaUrl } from '../config';
+import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
 import { publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
@@ -153,7 +155,13 @@ export default function UserProfileScreen({ route, navigation }) {
         ListEmptyComponent={<View style={styles.emptyState}><Text style={styles.emptyText}>{activeTab === 'reels' ? 'No reels yet.' : 'No posts yet.'}</Text></View>}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.postTile} onPress={() => navigation.navigate(activeTab === 'reels' ? 'ReelViewer' : 'PostDetail', activeTab === 'reels' ? { reelId: item._id } : { postId: item._id })}>
-            <Image source={{ uri: item.mediaUrl || item.videoUrl }} style={styles.postImage} resizeMode="cover" />
+            {activeTab === 'reels' ? (
+              <ReelGridPreview reel={item} style={styles.postImage} />
+            ) : resolvePostMediaUrl(item) ? (
+              <Image source={{ uri: resolvePostMediaUrl(item) }} style={styles.postImage} resizeMode="cover" />
+            ) : (
+              <View style={[styles.postImage, styles.mediaFallback]} />
+            )}
           </TouchableOpacity>
         )}
       />
@@ -198,6 +206,16 @@ const styles = StyleSheet.create({
   postImage: {
     width: '100%',
     height: '100%',
+  },
+  mediaFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#d1d5db',
+  },
+  mediaFallbackIcon: {
+    color: '#6b7280',
+    fontSize: 18,
   },
   emptyState: {
     paddingVertical: 48,

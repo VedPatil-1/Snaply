@@ -51,23 +51,18 @@ function getExpoLanIp() {
   return null;
 }
 
-function resolveApiHost() {
-  const envApi = stripSlash(process.env.EXPO_PUBLIC_API_URL);
-
-  if (envApi && (Platform.OS === 'web' || !isLoopback(envApi))) {
-    return envApi;
-  }
-
-  if (isProduction) {
-    return PRODUCTION_BACKEND_URL;
-  }
-
+function resolveLocalHost() {
   if (Platform.OS === 'web') {
     return WEB_HOST;
   }
 
   if (String(process.env.EXPO_PUBLIC_USE_EMULATOR || '').toLowerCase() === 'true') {
     return ANDROID_EMULATOR_HOST;
+  }
+
+  const explicitLocalIp = extractIPv4(process.env.EXPO_PUBLIC_LOCAL_IP);
+  if (explicitLocalIp) {
+    return `http://${explicitLocalIp}:${PORT}`;
   }
 
   const expoIp = getExpoLanIp();
@@ -78,14 +73,58 @@ function resolveApiHost() {
   return `http://${PHYSICAL_LAN_IP}:${PORT}`;
 }
 
+function resolveApiHost() {
+  const target = String(process.env.EXPO_PUBLIC_BACKEND_TARGET || '').trim().toLowerCase();
+
+  // 1. Explicit target selection
+  if (target === 'render' || target === 'production') {
+    return PRODUCTION_BACKEND_URL;
+  }
+
+  if (target === 'local' || target === 'development') {
+    return resolveLocalHost();
+  }
+
+  // 2. Custom URL provided via EXPO_PUBLIC_API_URL
+  const envApi = stripSlash(process.env.EXPO_PUBLIC_API_URL);
+  if (envApi) {
+    if (/render\.com/i.test(envApi) || (!isLoopback(envApi) && /^https?:\/\//i.test(envApi))) {
+      return envApi;
+    }
+
+    if (isLoopback(envApi)) {
+      return resolveLocalHost();
+    }
+
+    return envApi;
+  }
+
+  // 3. Fallback for production builds vs development
+  if (isProduction) {
+    return PRODUCTION_BACKEND_URL;
+  }
+
+  return resolveLocalHost();
+}
+
 export const API_HOST = resolveApiHost();
 export const MEDIA_BASE_URL = API_HOST;
 
-const envSocket = stripSlash(process.env.EXPO_PUBLIC_SOCKET_URL);
-export const SOCKET_BASE_URL =
-  envSocket && (Platform.OS === 'web' || !isLoopback(envSocket))
-    ? envSocket
-    : API_HOST;
+function resolveSocketHost() {
+  const envSocket = stripSlash(process.env.EXPO_PUBLIC_SOCKET_URL);
+
+  if (!envSocket) {
+    return API_HOST;
+  }
+
+  if (isLoopback(envSocket) && Platform.OS !== 'web') {
+    return resolveLocalHost();
+  }
+
+  return envSocket;
+}
+
+export const SOCKET_BASE_URL = resolveSocketHost();
 
 export const API_BASE_URL = `${API_HOST}/api`;
 
@@ -106,9 +145,50 @@ export function resolveMediaUrl(url) {
   return `${MEDIA_BASE_URL}/${normalizedPath}`;
 }
 
+export function resolvePostMediaUrl(post) {
+  const media = post?.mediaUrl || post?.imageUrl || post?.media?.url || post?.image || post?.url;
+  return resolveMediaUrl(media);
+}
+
+function isVideoMediaUrl(url) {
+  return /(?:\/video\/upload\/|\.(?:mp4|mov|m4v|webm)(?:[?#]|$))/i.test(String(url || ''));
+}
+
+export function resolveMediaThumbnailUrl(media) {
+  const candidates = typeof media === 'string'
+    ? [media]
+    : [media?.thumbnailUrl, media?.posterUrl, media?.thumbnail, media?.poster, media?.mediaUrl];
+
+  const thumbnail = candidates.find((candidate) => candidate && !isVideoMediaUrl(candidate));
+  return thumbnail ? resolveMediaUrl(thumbnail) : null;
+}
+
+/**
+ * Returns a still-image URL for use in <Image> thumbnail for a reel,
+ * or null if no thumbnail can be derived (caller must render a fallback View).
+ *
+ * Cloudinary video URLs support automatic poster-frame generation by swapping
+ * the extension from .mp4 to .jpg. All other hosts (Google Storage, local
+ * /uploads/reels/, etc.) do not support this, so we return null for them.
+ *
+ * The original videoUrl is NEVER modified here — the Reel Viewer continues
+ * to receive the unchanged .mp4 URL.
+ */
+export function getReelThumbnail(videoUrl) {
+  const url = String(videoUrl || '').trim();
+  if (!url) return null;
+  // Cloudinary: swap extension to get auto-generated poster frame
+  if (/cloudinary\.com/i.test(url)) {
+    return url.replace(/\.mp4(\?.*)?$/i, '.jpg');
+  }
+  // All other hosts — no thumbnail can be derived
+  return null;
+}
+
 if (__DEV__) {
   console.log('[Snaply] network', {
     platform: Platform.OS,
+    target: process.env.EXPO_PUBLIC_BACKEND_TARGET || 'local',
     apiHost: API_HOST,
     apiBaseUrl: API_BASE_URL,
     socketUrl: SOCKET_BASE_URL,
