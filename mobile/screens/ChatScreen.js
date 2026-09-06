@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { apiRequest, uploadImageAsset } from '../services/api';
 import { connectSocket, socket } from '../services/socket';
 import { resolveMediaUrl } from '../config';
@@ -183,13 +183,8 @@ export default function ChatScreen({ navigation, route }) {
   const chooseImage = async () => {
     try {
       if (uploadingImage || !conversationId || !otherUser?._id || !currentUserId) return;
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        alert('Allow photo access to send an image.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-      if (result.canceled || !result.assets?.[0]) return;
+      const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
+      if (result.didCancel || !result.assets?.[0]) return;
       const asset = result.assets[0];
       if (!asset.uri || (asset.fileSize && asset.fileSize > 25 * 1024 * 1024)) throw new Error('Choose an image smaller than 25 MB.');
       setUploadingImage(true);

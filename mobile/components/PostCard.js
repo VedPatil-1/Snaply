@@ -9,14 +9,14 @@ import {
   View,
 } from 'react-native';
 import { resolveMediaUrl, resolvePostMediaUrl } from '../config';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { colors, radius, shadows, spacing, typography } from '../theme';
 
 export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onSave, onProfileClick }) {
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
-  const [mediaAspectRatio, setMediaAspectRatio] = useState(null);
+  const [mediaAspectRatio, setMediaAspectRatio] = useState(0.8);
   const lastTapRef = useRef(0);
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
@@ -117,15 +117,17 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap}>
-        <View style={styles.mediaContainer}>
+        <View style={[styles.mediaContainer, { aspectRatio: mediaAspectRatio }]}>
           {resolvedMediaUrl ? (
             <Image
               source={{ uri: resolvedMediaUrl }}
-              style={[styles.image, mediaAspectRatio ? { aspectRatio: mediaAspectRatio, height: undefined } : null]}
+              style={styles.image}
               resizeMode="contain"
               onLoad={(event) => {
                 const source = event.nativeEvent?.source;
-                if (source?.width && source?.height) setMediaAspectRatio(source.width / source.height);
+                if (source?.width && source?.height) {
+                  setMediaAspectRatio(Math.max(0.8, source.width / source.height));
+                }
               }}
             />
           ) : <View style={[styles.image, styles.mediaFallback]} />}
@@ -253,14 +255,17 @@ const styles = StyleSheet.create({
   },
   image: {
     width: '100%',
-    height: 360,
+    height: '100%',
     backgroundColor: '#e5e7eb',
     alignSelf: 'center',
   },
   mediaContainer: {
     width: '100%',
+    minHeight: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#e5e7eb',
+    overflow: 'hidden',
   },
   mediaFallback: {
     alignItems: 'center',

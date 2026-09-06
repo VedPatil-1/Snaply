@@ -26,31 +26,6 @@ function extractIPv4(value) {
   return match ? match[1] : null;
 }
 
-function getExpoLanIp() {
-  try {
-    const Constants = require('expo-constants').default;
-    const candidates = [
-      Constants.expoConfig?.hostUri,
-      Constants.expoGoConfig?.debuggerHost,
-      Constants.linkingUri,
-      Constants.manifest2?.extra?.expoGo?.debuggerHost,
-      Constants.manifest?.debuggerHost,
-      Constants.expoConfig?.extra?.debuggerHost,
-    ];
-
-    for (const candidate of candidates) {
-      const ip = extractIPv4(candidate);
-      if (ip && !isLoopback(ip)) {
-        return ip;
-      }
-    }
-  } catch (error) {
-    console.warn('[Snaply] Unable to read Expo host IP:', error?.message);
-  }
-
-  return null;
-}
-
 function resolveLocalHost() {
   if (Platform.OS === 'web') {
     return WEB_HOST;
@@ -63,11 +38,6 @@ function resolveLocalHost() {
   const explicitLocalIp = extractIPv4(process.env.EXPO_PUBLIC_LOCAL_IP);
   if (explicitLocalIp) {
     return `http://${explicitLocalIp}:${PORT}`;
-  }
-
-  const expoIp = getExpoLanIp();
-  if (expoIp) {
-    return `http://${expoIp}:${PORT}`;
   }
 
   return `http://${PHYSICAL_LAN_IP}:${PORT}`;

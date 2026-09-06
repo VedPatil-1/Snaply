@@ -16,7 +16,7 @@ import { socket } from '../services/socket';
 import { useFocusEffect } from '@react-navigation/native';
 import { openProfileImageViewer } from '../services/profileImageViewer';
 import { colors, radius, shadows, spacing, typography } from '../theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export default function InboxScreen({ navigation }) {
   const [currentUserId, setCurrentUserId] = useState(null);

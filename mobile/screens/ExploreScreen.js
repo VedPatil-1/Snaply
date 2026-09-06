@@ -14,7 +14,7 @@ import { apiRequest } from '../services/api';
 import { subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { resolveMediaThumbnailUrl, resolvePostMediaUrl, resolveReelThumbnailUrl } from '../config';
 import { colors, radius, spacing, typography } from '../theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 function interleaveExploreItems(posts, reels) {
   const normalizedPosts = (Array.isArray(posts) ? posts : []).filter((post) => post?._id && resolvePostMediaUrl(post)).map((post) => ({

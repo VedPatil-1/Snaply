@@ -10,25 +10,21 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { apiRequest, uploadImageAsset } from '../services/api';
+import Video from 'react-native-video';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { apiRequest, uploadImageAsset, uploadVideoAsset } from '../services/api';
 import { API_BASE_URL } from '../config';
 import { colors, radius } from '../theme';
 
 function CreateVideoPreview({ uri }) {
-  const player = useVideoPlayer(uri, (instance) => {
-    instance.muted = true;
-    instance.loop = true;
-  });
-
   return (
     <View style={styles.previewWrap}>
-      <VideoView
-        player={player}
+      <Video
+        source={{ uri }}
         style={styles.previewVideo}
-        contentFit="cover"
+        resizeMode="cover"
+        muted
+        repeat
         nativeControls
       />
     </View>
@@ -46,21 +42,10 @@ export default function CreateScreen({ navigation, route }) {
   const [composerOpen, setComposerOpen] = useState(false);
 
   const pickPhoto = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!permissionResult.granted) {
-      Alert.alert('Permission needed', 'Please allow access to your photo library to choose an image.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.85,
-    });
+    const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
 
     const asset = result.assets?.[0];
-    if (!result.canceled && asset?.uri && (asset.mediaType === 'image' || asset.type === 'image' || !asset.mediaType)) {
+    if (!result.didCancel && asset?.uri) {
       setPhotoAsset(asset);
     }
   };
@@ -76,20 +61,10 @@ export default function CreateScreen({ navigation, route }) {
   };
 
   const pickStoryMedia = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('Permission needed', 'Please allow access to your photo library to choose story media.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      allowsEditing: false,
-      quality: 0.85,
-    });
+    const result = await launchImageLibrary({ mediaType: 'mixed', selectionLimit: 1 });
     const asset = result.assets?.[0];
-    if (result.canceled || !asset?.uri) return;
-    if (asset.mediaType === 'video' || asset.type === 'video') {
+    if (result.didCancel || !asset?.uri) return;
+    if (asset.type === 'video') {
       if (Number(asset.duration || 0) > 30000) {
         Alert.alert('Video too long', 'Stories can be up to 30 seconds long. Choose a shorter video.');
         return;
@@ -106,21 +81,10 @@ export default function CreateScreen({ navigation, route }) {
 
   const pickVideo = async () => {
     console.log('[Snaply] reel picker opened');
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!permissionResult.granted) {
-      Alert.alert('Permission needed', 'Please allow access to your photo library to choose a video.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['videos'],
-      allowsEditing: false,
-      quality: 0.8,
-    });
+    const result = await launchImageLibrary({ mediaType: 'video', selectionLimit: 1 });
 
     const asset = result.assets?.[0];
-    if (!result.canceled && asset?.uri && (asset.mediaType === 'video' || asset.type === 'video' || !asset.mediaType)) {
+    if (!result.didCancel && asset?.uri) {
       setVideoUri(asset.uri);
       setComposerOpen(false);
       console.log('[Snaply] reel selected:', asset.uri);
@@ -151,25 +115,7 @@ export default function CreateScreen({ navigation, route }) {
       const fileName = `snaply-reel-${Date.now()}.mp4`;
       const uploadUrl = `${API_BASE_URL}/uploads/reel-video`;
       console.log('[Snaply] upload URL:', uploadUrl);
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoUri, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
-        mimeType: 'video/mp4',
-        parameters: {
-          fileName,
-        },
-      });
-      console.log('[Snaply] upload response status:', uploadResult.status);
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error(`Video upload failed (${uploadResult.status}).`);
-      }
-      let uploadResponse;
-      try {
-        uploadResponse = JSON.parse(uploadResult.body || '{}');
-      } catch (parseError) {
-        throw new Error('Video upload returned an invalid server response.');
-      }
+      const uploadResponse = await uploadVideoAsset(videoUri, uploadUrl, fileName);
       const permanentVideoUrl = uploadResponse?.mediaUrl || uploadResponse?.url;
       const thumbnailUrl = uploadResponse?.thumbnailUrl || uploadResponse?.posterUrl;
       if (!permanentVideoUrl) throw new Error('Video upload did not return a media URL.');
@@ -263,14 +209,7 @@ export default function CreateScreen({ navigation, route }) {
         upload = await uploadImageAsset(photoAsset);
         mediaType = 'image';
       } else {
-        const response = await FileSystem.uploadAsync(`${API_BASE_URL}/uploads/file`, videoUri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
-          mimeType: 'video/mp4',
-        });
-        if (response.status < 200 || response.status >= 300) throw new Error(`Story upload failed (${response.status}).`);
-        upload = JSON.parse(response.body || '{}');
+        upload = await uploadVideoAsset(videoUri, `${API_BASE_URL}/uploads/file`, `snaply-story-${Date.now()}.mp4`);
         mediaType = 'video';
       }
 

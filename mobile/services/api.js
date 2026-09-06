@@ -1,89 +1,161 @@
-import { File, UploadType } from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config';
 
-export async function uploadImageAsset(asset, onProgress) {
-  if (!asset?.uri) throw new Error('The selected image does not have a readable URI.');
-
-  const mimeType = asset.mimeType || 'image/jpeg';
-  if (!mimeType.startsWith('image/')) throw new Error('Please select an image file.');
-
-  if (asset.file) {
-    const formData = new FormData();
-    formData.append('image', asset.file, asset.fileName || asset.file.name || 'image.jpg');
-
-    const response = await fetch(`${API_BASE_URL}/uploads/image`, {
-      method: 'POST',
-      body: formData,
-      headers: { Accept: 'application/json' },
-    });
-
-    let data = null;
-    try {
-      data = await response.json();
-    } catch (error) {
-      throw new Error(`Image upload returned an invalid response (HTTP ${response.status}).`);
-    }
-
-    if (!response.ok) {
-      throw new Error(data?.message || `Image upload failed (HTTP ${response.status}).`);
-    }
-
-    const mediaUrl = data?.mediaUrl || data?.url || data?.filePath;
-    if (!mediaUrl || /^(file:|blob:|content:)/i.test(mediaUrl)) {
-      throw new Error('Image upload did not return a usable server URL.');
-    }
-
-    return { ...data, mediaUrl };
+const TOKEN_KEY = 'snaply_auth_token';
+export async function setAuthToken(token) {
+  if (!token) {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+    return;
   }
 
-  const file = new File(asset.uri);
-  const response = await file.upload(`${API_BASE_URL}/uploads/image`, {
-    httpMethod: 'POST',
-    uploadType: UploadType.MULTIPART,
-    fieldName: 'image',
-    mimeType,
-    headers: { Accept: 'application/json' },
-    onProgress,
+  await AsyncStorage.setItem(TOKEN_KEY, token);
+}
+
+export async function getAuthToken() {
+  return await AsyncStorage.getItem(TOKEN_KEY);
+}
+
+export async function clearAuthToken() {
+  await AsyncStorage.removeItem(TOKEN_KEY);
+}
+/**
+ * Save JWT token securely
+
+/**
+ * Upload image
+ */
+export async function uploadImageAsset(asset, onProgress) {
+  if (!asset?.uri) {
+    throw new Error('The selected image does not have a readable URI.');
+  }
+
+  const mimeType = asset.mimeType || 'image/jpeg';
+
+  if (!mimeType.startsWith('image/')) {
+    throw new Error('Please select an image file.');
+  }
+
+  const token = await getAuthToken();
+
+  const formData = new FormData();
+
+  formData.append('image', {
+    uri: asset.uri,
+    type: mimeType,
+    name: asset.fileName || 'image.jpg',
+  });
+
+  const response = await fetch(`${API_BASE_URL}/uploads/image`, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      Accept: 'application/json',
+
+      ...(token
+        ? {
+          Authorization: `Bearer ${token}`,
+        }
+        : {}),
+    },
   });
 
   let data = null;
+
   try {
-    data = response.body ? JSON.parse(response.body) : null;
+    data = response.body
+      ? JSON.parse(response.body)
+      : null;
   } catch (error) {
-    throw new Error(`Image upload returned an invalid response (HTTP ${response.status}).`);
+    throw new Error(
+      `Image upload returned an invalid response (HTTP ${response.status}).`
+    );
   }
 
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(data?.message || `Image upload failed (HTTP ${response.status}).`);
+  if (
+    response.status < 200 ||
+    response.status >= 300
+  ) {
+    throw new Error(
+      data?.message ||
+      `Image upload failed (HTTP ${response.status}).`
+    );
   }
 
-  const mediaUrl = data?.mediaUrl || data?.url || data?.filePath;
-  if (!mediaUrl || /^(file:|blob:|content:)/i.test(mediaUrl)) {
-    throw new Error('Image upload did not return a usable server URL.');
+  const mediaUrl =
+    data?.mediaUrl ||
+    data?.url ||
+    data?.filePath;
+
+  if (
+    !mediaUrl ||
+    /^(file:|blob:|content:)/i.test(mediaUrl)
+  ) {
+    throw new Error(
+      'Image upload did not return a usable server URL.'
+    );
   }
 
-  return { ...data, mediaUrl };
+  return {
+    ...data,
+    mediaUrl,
+  };
 }
 
+/**
+ * Main API request function
+ */
 export async function apiRequest(path, options = {}) {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = `${API_BASE_URL}${normalizedPath}`;
-  const { headers, body, ...rest } = options;
+  const normalizedPath = path.startsWith('/')
+    ? path
+    : `/${path}`;
 
-  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const url = `${API_BASE_URL}${normalizedPath}`;
+
+  const {
+    headers,
+    body,
+    ...rest
+  } = options;
+
+  const isFormData =
+    typeof FormData !== 'undefined' &&
+    body instanceof FormData;
+
+  /*
+   * Get logged-in user's JWT
+   */
+  const token = await getAuthToken();
 
   try {
     const response = await fetch(url, {
       ...rest,
+
       body,
+
       headers: {
         Accept: 'application/json',
-        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+
+        ...(isFormData
+          ? {}
+          : {
+            'Content-Type': 'application/json',
+          }),
+
+        /*
+         * Add JWT automatically
+         */
+        ...(token
+          ? {
+            Authorization: `Bearer ${token}`,
+          }
+          : {}),
+
         ...(headers || {}),
       },
     });
 
     const text = await response.text();
+
     let data = null;
 
     if (text) {
@@ -95,32 +167,82 @@ export async function apiRequest(path, options = {}) {
     }
 
     if (!response.ok) {
-      const message = data?.message || data || `HTTP ${response.status}: Request failed`;
-      console.error(`API Error [${response.status}] ${url}:`, message);
-      const apiError = new Error(typeof message === 'string' ? message : `HTTP ${response.status}: Request failed`);
+      const message =
+        data?.message ||
+        data ||
+        `HTTP ${response.status}: Request failed`;
+
+      console.error(
+        `API Error [${response.status}] ${url}:`,
+        message
+      );
+
+      const apiError = new Error(
+        typeof message === 'string'
+          ? message
+          : `HTTP ${response.status}: Request failed`
+      );
+
       apiError.status = response.status;
+
       throw apiError;
     }
 
     return data;
   } catch (error) {
-    if (error && typeof error.status === 'number') {
+    if (
+      error &&
+      typeof error.status === 'number'
+    ) {
       throw error;
     }
 
-    console.error(`API Network Error: ${url}`, error?.message || error);
-    throw new Error('Unable to connect to Snaply server');
+    console.error(
+      `API Network Error: ${url}`,
+      error?.message || error
+    );
+
+    throw new Error(
+      'Unable to connect to Snaply server'
+    );
   }
 }
 
+/**
+ * API helper methods
+ */
 export const api = {
-  get: (path) => apiRequest(path, { method: 'GET' }),
-  post: (path, body) => apiRequest(path, { method: 'POST', body: JSON.stringify(body) }),
-  put: (path, body) => apiRequest(path, { method: 'PUT', body: JSON.stringify(body) }),
-  patch: (path, body) => apiRequest(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  get: (path) =>
+    apiRequest(path, {
+      method: 'GET',
+    }),
+
+  post: (path, body) =>
+    apiRequest(path, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  put: (path, body) =>
+    apiRequest(path, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  patch: (path, body) =>
+    apiRequest(path, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   delete: (path, body) =>
     apiRequest(path, {
       method: 'DELETE',
-      ...(body ? { body: JSON.stringify(body) } : {}),
+
+      ...(body
+        ? {
+          body: JSON.stringify(body),
+        }
+        : {}),
     }),
 };

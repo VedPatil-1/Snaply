@@ -10,11 +10,10 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import { useEvent } from 'expo';
+import Video from 'react-native-video';
 import { resolveMediaThumbnailUrl, resolveMediaUrl } from '../config';
 import { colors } from '../theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export default function ReelVideoCard({
   reel,
@@ -37,16 +36,6 @@ export default function ReelVideoCard({
   const videoUrl = resolveMediaUrl(
     reel?.videoUrl || reel?.mediaUrl || ''
   );
-
-  const player = useVideoPlayer(videoUrl || null, (instance) => {
-    if (!instance) return;
-    instance.loop = true;
-    instance.muted = Boolean(isMuted);
-  });
-  const { status: playerStatus, error: playerError } = useEvent(player, 'statusChange', {
-    status: 'idle',
-    error: null,
-  });
 
   const [isLiked, setIsLiked] = useState(Boolean(reel?.isLiked));
   const [isSaved, setIsSaved] = useState(Boolean(reel?.isSaved));
@@ -75,47 +64,8 @@ export default function ReelVideoCard({
   ]);
 
   useEffect(() => {
-    if (playerError) {
-      console.warn('[Snaply] reel playback error:', reel?._id, playerError?.message || playerError);
-      setPlaybackFailed(true);
-    }
-  }, [playerError, reel?._id]);
-
-  useEffect(() => {
     setPlaybackFailed(false);
   }, [reel?._id, videoUrl]);
-
-  useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    try {
-      if (isActive && isScreenFocused && !isPlaybackPaused) {
-        player.play();
-        console.log('[Snaply] reel autoplay:', reel?._id);
-      } else {
-        player.pause();
-      }
-    } catch (playerControlError) {
-      console.warn('[Snaply] player control skipped:', playerControlError?.message || playerControlError);
-    }
-  }, [isActive, isScreenFocused, isPlaybackPaused, player, videoUrl, reel?._id]);
-
-  useEffect(() => () => {
-    try {
-      player?.pause();
-    } catch (error) {
-      // The hook may have released the native player before React cleanup.
-    }
-  }, [player]);
-
-  useEffect(() => {
-    if (!player) return;
-    try {
-      player.muted = Boolean(isMuted);
-    } catch (muteError) {
-      console.warn('[Snaply] mute update skipped:', muteError?.message || muteError);
-    }
-  }, [isMuted, player]);
 
   /*
    * Play only the active reel.
@@ -313,14 +263,19 @@ export default function ReelVideoCard({
             </View>
           )
         ) : (
-          <VideoView
-            player={player}
+          <Video
+            source={{ uri: videoUrl }}
             style={[StyleSheet.absoluteFillObject, styles.video]}
-            contentFit="cover"
-            nativeControls={false}
-            allowsPictureInPicture={false}
-            allowsFullscreen={false}
-            surfaceType="textureView"
+            resizeMode="cover"
+            repeat
+            muted={Boolean(isMuted)}
+            paused={!isActive || !isScreenFocused || isPlaybackPaused}
+            poster={resolveMediaThumbnailUrl(reel) || undefined}
+            posterResizeMode="contain"
+            onError={(error) => {
+              console.warn('[Snaply] reel playback error:', reel?._id, videoUrl, error?.errorString || error?.error || error);
+              setPlaybackFailed(true);
+            }}
             onLayout={({ nativeEvent }) => {
               console.log('[Snaply] Android VideoView dimensions:', nativeEvent.layout.width, nativeEvent.layout.height);
             }}

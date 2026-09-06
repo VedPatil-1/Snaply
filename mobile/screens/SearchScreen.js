@@ -14,7 +14,7 @@ import { apiRequest } from '../services/api';
 import { publishUserUpdate, subscribeToUserUpdates } from '../services/sync';
 import { resolveMediaThumbnailUrl, resolveMediaUrl, resolvePostMediaUrl } from '../config';
 import { colors, radius, shadows, spacing, typography } from '../theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const debounce = (fn, delay) => {
   let timeout;

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../components/ProfileHeader';
 import { DEV_USERNAME, resolvePostMediaUrl } from '../config';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
 import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';

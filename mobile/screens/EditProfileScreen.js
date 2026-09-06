@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { apiRequest, uploadImageAsset } from '../services/api';
 import { resolveMediaUrl } from '../config';
 import { publishUserUpdate } from '../services/sync';
@@ -85,13 +85,8 @@ export default function EditProfileScreen({ navigation }) {
   };
 
   const chooseProfilePicture = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Allow photo access to choose a profile picture.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
-    if (result.canceled || !result.assets?.[0]) return;
+    const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
+    if (result.didCancel || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.uri) {
       Alert.alert('Invalid image', 'The selected image could not be read.');

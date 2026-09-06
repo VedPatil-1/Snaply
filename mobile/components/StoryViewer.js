@@ -1,42 +1,33 @@
 import React, { useMemo } from 'react';
 import { Image, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useEvent } from 'expo';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import Video from 'react-native-video';
 import { resolveMediaUrl } from '../config';
 
 export default function StoryViewer({ visible, screenFocused = true, usersWithStories = [], currentUserIndex = 0, currentStoryIndex = 0, onChangePosition, onDeleteStory, onViewed, onClose }) {
   const userGroup = usersWithStories[currentUserIndex] || null;
-  const stories = userGroup?.stories || [];
+  const stories = useMemo(() => userGroup?.stories || [], [userGroup]);
   const story = useMemo(() => stories[currentStoryIndex] || null, [currentStoryIndex, stories]);
   const storyVideoUrl = story?.mediaType === 'video' ? resolveMediaUrl(story.mediaUrl) : null;
-  const player = useVideoPlayer(storyVideoUrl, (instance) => {
-    if (!instance) return;
-    instance.muted = false;
-    instance.loop = false;
-    instance.timeUpdateEventInterval = 0.25;
-  });
-  const { status } = useEvent(player, 'statusChange', { status: player?.status });
-  const { duration } = useEvent(player, 'sourceLoad', { duration: player?.duration || 0 });
-  const { currentTime } = useEvent(player, 'timeUpdate', { currentTime: player?.currentTime || 0 });
+  const videoRef = React.useRef(null);
+  const [duration, setDuration] = React.useState(0);
+  const [currentTime, setCurrentTime] = React.useState(0);
 
   const stopPlayback = React.useCallback(() => {
-    if (!player) return;
+    if (!videoRef.current) return;
     try {
-      player.pause();
-      player.currentTime = 0;
+      videoRef.current.seek(0);
+      setCurrentTime(0);
     } catch (error) {
-      // The managed player may already be releasing during unmount.
+      // The native player may already be releasing during unmount.
     }
-  }, [player]);
+  }, []);
 
   React.useEffect(() => {
-    if (!visible || !screenFocused || !storyVideoUrl) {
-      stopPlayback();
-      return undefined;
-    }
-
+    setDuration(0);
+    setCurrentTime(0);
+    if (!visible || !screenFocused || !storyVideoUrl) stopPlayback();
     return stopPlayback;
-  }, [visible, screenFocused, storyVideoUrl, stopPlayback]);
+  }, [visible, screenFocused, storyVideoUrl, story?.id, stopPlayback]);
 
   React.useEffect(() => {
     if (visible && story) onViewed?.(story);
@@ -74,17 +65,6 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
     return () => clearTimeout(timer);
   }, [visible, story, storyVideoUrl, goToNextStory]);
 
-  React.useEffect(() => {
-    if (!visible || !storyVideoUrl || !player) return undefined;
-    const subscription = player.addListener('playToEnd', goToNextStory);
-    return () => subscription.remove();
-  }, [visible, storyVideoUrl, player, goToNextStory]);
-
-  React.useEffect(() => {
-    if (!visible || !screenFocused || !storyVideoUrl || !player || status === 'error') return;
-    if (player.status === 'readyToPlay' && !player.playing) player.play();
-  }, [visible, screenFocused, storyVideoUrl, player, status]);
-
   const panResponder = React.useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gestureState) => Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
     onPanResponderRelease: (_event, gestureState) => {
@@ -110,7 +90,18 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
 
           <View {...panResponder.panHandlers} style={styles.mediaArea}>
           {storyVideoUrl ? (
-            <VideoView player={player} style={styles.image} contentFit="contain" nativeControls />
+            <Video
+              key={story.id}
+              ref={videoRef}
+              source={{ uri: storyVideoUrl }}
+              style={styles.image}
+              resizeMode="contain"
+              paused={!visible || !screenFocused}
+              onLoad={({ duration: loadedDuration }) => setDuration(Math.min(loadedDuration || 0, 30))}
+              onProgress={({ currentTime: nextTime }) => setCurrentTime(nextTime)}
+              onEnd={goToNextStory}
+              onError={(error) => console.warn('[Snaply] story playback error:', story.id, storyVideoUrl, error?.error?.localizedDescription || error)}
+            />
           ) : (
             <Image source={{ uri: resolveMediaUrl(story.mediaUrl || story.avatar) }} style={styles.image} resizeMode="contain" />
           )}
