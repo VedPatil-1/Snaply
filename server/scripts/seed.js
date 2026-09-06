@@ -346,6 +346,11 @@ const sampleStories = [
     mediaUrl: 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=85',
     caption: 'A slow Sunday morning.',
   },
+  {
+    user: 'ethan',
+    mediaUrl: 'https://images.unsplash.com/photo-1504593811423-6dd665756598?auto=format&fit=crop&w=900&q=85',
+    caption: 'Coffee first, adventure second.',
+  },
 ];
 
 const normalizeUsers = async () => {
@@ -511,6 +516,7 @@ module.exports = {
   sampleUsers,
   samplePosts,
   sampleReels,
+  sampleStories,
   seedDatabase,
 };
 

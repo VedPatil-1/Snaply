@@ -4,11 +4,12 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Post = require('../models/Post');
 const Reel = require('../models/Reel');
+const Story = require('../models/Story');
 const connectDB = require('../config/db');
-const { sampleUsers, samplePosts } = require('./seed');
+const { sampleUsers, samplePosts, sampleStories } = require('./seed');
 
 const CONFIRMATION = 'SNAPLY_PRODUCTION_DEMO';
-const DEMO_USERNAMES = ['alicia', 'marcus', 'sofia', 'liam'];
+const DEMO_USERNAMES = ['alicia', 'marcus', 'sofia', 'liam', 'ethan'];
 
 const fail = (message) => {
   throw new Error(message);
@@ -28,11 +29,11 @@ const validateInputs = () => {
   }
 
   const reelUrl = String(process.env.DEMO_REEL_URL || '').trim();
-  if (!/^https:\/\//i.test(reelUrl)) {
-    fail('DEMO_REEL_URL must be an HTTPS URL for a playable production demo reel.');
+  if (reelUrl && !/^https:\/\//i.test(reelUrl)) {
+    fail('DEMO_REEL_URL must be an HTTPS URL when provided.');
   }
 
-  return reelUrl;
+  return reelUrl || null;
 };
 
 const seedProductionDemo = async () => {
@@ -78,25 +79,47 @@ const seedProductionDemo = async () => {
     );
   }
 
-  const alicia = usersByUsername.get('alicia');
-  await Reel.findOneAndUpdate(
-    { user: alicia._id, caption: 'Snaply production demo reel' },
-    {
-      $setOnInsert: {
-        user: alicia._id,
-        videoUrl: demoReelUrl,
-        caption: 'Snaply production demo reel',
-        musicName: 'Original Audio',
-        likes: [],
-        comments: [],
-        views: 0,
+  const demoStories = sampleStories.filter((story) => DEMO_USERNAMES.includes(story.user));
+  for (const story of demoStories) {
+    const user = usersByUsername.get(story.user);
+    if (!user) continue;
+    await Story.findOneAndUpdate(
+      { user: user._id, caption: story.caption },
+      {
+        $set: {
+          mediaUrl: story.mediaUrl,
+          mediaType: 'image',
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+        $setOnInsert: { user: user._id, caption: story.caption },
       },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+  }
+
+  let reelsEnsured = 0;
+  const alicia = usersByUsername.get('alicia');
+  if (demoReelUrl && alicia) {
+    await Reel.findOneAndUpdate(
+      { user: alicia._id, caption: 'Snaply production demo reel' },
+      {
+        $setOnInsert: {
+          user: alicia._id,
+          videoUrl: demoReelUrl,
+          caption: 'Snaply production demo reel',
+          musicName: 'Original Audio',
+          likes: [],
+          comments: [],
+          views: 0,
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    reelsEnsured = 1;
+  }
 
   console.log(`Production demo data ensured in ${selectedDatabase}.`);
-  console.log(`Users ensured: ${demoUsers.length}; posts ensured: ${demoPosts.length}; reels ensured: 1.`);
+  console.log(`Users ensured: ${demoUsers.length}; posts ensured: ${demoPosts.length}; stories ensured: ${demoStories.length}; reels ensured: ${reelsEnsured}.`);
 };
 
 seedProductionDemo()

@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
-import { resolveMediaUrl } from '../config';
+import { resolveMediaThumbnailUrl, resolveMediaUrl } from '../config';
 import { colors } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -53,6 +53,7 @@ export default function ReelVideoCard({
   const [likeCount, setLikeCount] = useState(reel?.likesCount || 0);
 
   const [showHeart, setShowHeart] = useState(false);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
 
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
@@ -76,8 +77,13 @@ export default function ReelVideoCard({
   useEffect(() => {
     if (playerError) {
       console.warn('[Snaply] reel playback error:', reel?._id, playerError?.message || playerError);
+      setPlaybackFailed(true);
     }
   }, [playerError, reel?._id]);
+
+  useEffect(() => {
+    setPlaybackFailed(false);
+  }, [reel?._id, videoUrl]);
 
   useEffect(() => {
     if (!player || !videoUrl) return;
@@ -297,18 +303,29 @@ export default function ReelVideoCard({
       ]}
     >
       {isActive ? (
-        <VideoView
-          player={player}
-          style={[StyleSheet.absoluteFillObject, styles.video]}
-          contentFit="cover"
-          nativeControls={false}
-          allowsPictureInPicture={false}
-          allowsFullscreen={false}
-          surfaceType="surfaceView"
-          onLayout={({ nativeEvent }) => {
-            console.log('[Snaply] Android VideoView dimensions:', nativeEvent.layout.width, nativeEvent.layout.height);
-          }}
-        />
+        playbackFailed ? (
+          resolveMediaThumbnailUrl(reel) ? (
+            <Image source={{ uri: resolveMediaThumbnailUrl(reel) }} style={[StyleSheet.absoluteFillObject, styles.video]} resizeMode="contain" />
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, styles.centerMessage]}>
+              <Text style={styles.errorTitle}>Unable to play reel</Text>
+              <Text style={styles.errorText}>This video is not supported on this device.</Text>
+            </View>
+          )
+        ) : (
+          <VideoView
+            player={player}
+            style={[StyleSheet.absoluteFillObject, styles.video]}
+            contentFit="cover"
+            nativeControls={false}
+            allowsPictureInPicture={false}
+            allowsFullscreen={false}
+            surfaceType="textureView"
+            onLayout={({ nativeEvent }) => {
+              console.log('[Snaply] Android VideoView dimensions:', nativeEvent.layout.width, nativeEvent.layout.height);
+            }}
+          />
+        )
       ) : null}
 
       {/* =====================================================

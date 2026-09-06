@@ -2,7 +2,8 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -32,7 +33,16 @@ function RootTabs() {
     tabBarStyle: styles.tabBar,
     tabBarActiveTintColor: '#111827',
     tabBarInactiveTintColor: '#64748b',
-    tabBarIcon: ({ color, size, focused }) => <Text style={{ fontSize: size + 2, opacity: focused ? 1 : 0.75, color }}>{({ Home: '🏠', Chat: '💬', Reels: '🎬', Search: '🔍', Profile: '👤' })[route.name] || '•'}</Text>,
+    tabBarIcon: ({ color, size, focused }) => {
+      const icons = {
+        Home: focused ? 'home' : 'home-outline',
+        Chat: focused ? 'chatbubbles' : 'chatbubbles-outline',
+        Reels: focused ? 'play-circle' : 'play-circle-outline',
+        Search: focused ? 'search' : 'search-outline',
+        Profile: focused ? 'person' : 'person-outline',
+      };
+      return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
+    },
   })}>
     <Tab.Screen name="Home" component={HomeScreen} />
     <Tab.Screen name="Chat" component={InboxScreen} />

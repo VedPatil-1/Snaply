@@ -9,6 +9,7 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seed.js",
     "seed:stories": "node scripts/ensureDemoStories.js",
+    "verify:production-demo": "node scripts/verifyProductionDemo.js",
     "seed:production": "node scripts/seedProductionDemo.js"
   },
   "keywords": [],

@@ -58,9 +58,7 @@ const startServer = async () => {
     await connectDB();
     const server = http.createServer(app);
     setupSocketIO(server, corsOptions);
-    if (process.env.NODE_ENV !== 'production') {
-      startDevChatSimulator();
-    }
+    startDevChatSimulator();
     server.on('error', (error) => {
       console.error('Snaply server error:', error.message);
       process.exitCode = 1;
