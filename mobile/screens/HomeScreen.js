@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import PostCard from '../components/PostCard';
 import StoryStrip from '../components/StoryStrip';
 import StoryViewer from '../components/StoryViewer';
@@ -351,14 +352,14 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.logo}>Snaply</Text>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Create')}>
-            <Text style={styles.iconText}>＋</Text>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Create')} accessibilityLabel="Create">
+            <Ionicons name="add" size={20} color="#6657E8" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Inbox')}>
-            <Text style={styles.iconText}>✉</Text>
+            <Ionicons name="chatbubble-ellipses-outline" size={19} color="#6657E8" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Activity')}>
-            <Text style={styles.iconText}>🔔</Text>
+            <Ionicons name="notifications-outline" size={19} color="#6657E8" />
           </TouchableOpacity>
         </View>
       </View>
@@ -422,7 +423,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F7F8FC',
   },
   loadingState: {
     flex: 1,
@@ -433,17 +434,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#ECEEF5',
   },
   logo: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#111827',
-    letterSpacing: -0.5,
+    color: '#151827',
+    letterSpacing: -0.6,
   },
   headerActions: {
     flexDirection: 'row',
@@ -453,13 +454,10 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: '#EEEAFE',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-  },
-  iconText: {
-    fontSize: 18,
   },
   centerState: {
     flex: 1,

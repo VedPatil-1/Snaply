@@ -17,6 +17,7 @@ import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
 import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
+import { colors, spacing, typography } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
   const [user, setUser] = useState(null);
@@ -137,11 +138,11 @@ export default function ProfileScreen({ navigation }) {
         {navigation.canGoBack() ? <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backText}>Back</Text></TouchableOpacity> : null}
         <Text style={styles.usernameText}>@{user?.username || DEV_USERNAME}</Text>
         <View style={styles.iconRow}>
-          <TouchableOpacity onPress={() => navigation.navigate('Create')}>
-            <Text style={styles.iconText}>＋</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Create')} style={styles.headerIcon}>
+            <Ionicons name="add" size={21} color={colors.accent} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Activity')}>
-            <Text style={styles.iconText}>🔔</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Activity')} style={styles.headerIcon}>
+            <Ionicons name="notifications-outline" size={19} color={colors.accent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -193,7 +194,7 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   loadingState: {
     flex: 1,
@@ -204,17 +205,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: colors.border,
   },
   backButton: { marginRight: 10 },
   backText: { color: '#111827', fontWeight: '700' },
   usernameText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.heading,
+    color: colors.text,
   },
   iconRow: {
     flexDirection: 'row',
@@ -223,13 +224,13 @@ const styles = StyleSheet.create({
   },
   iconText: {
     fontSize: 20,
-    color: '#111827',
+    color: colors.accent,
   },
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#fff',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   tabButton: {
     flex: 1,
@@ -238,15 +239,15 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: '#111827',
+    borderBottomColor: colors.accent,
   },
   tabText: {
-    fontSize: 14,
-    color: '#6b7280',
+    ...typography.caption,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#111827',
+    color: colors.text,
   },
   placeholderBox: {
     flex: 1,
@@ -262,7 +263,7 @@ const styles = StyleSheet.create({
     width: '33.333%',
     aspectRatio: 1,
     padding: 1,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.border,
   },
   profileTileImage: {
     width: '100%',
@@ -273,7 +274,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d1d5db',
+    backgroundColor: colors.input,
   },
   videoIndicator: {
     position: 'absolute',
@@ -302,4 +303,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(17,24,39,0.72)',
   },
+  headerIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
 });

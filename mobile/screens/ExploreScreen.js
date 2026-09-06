@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../services/api';
 import { subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { resolveMediaThumbnailUrl, resolvePostMediaUrl, resolveReelThumbnailUrl } from '../config';
+import { colors, radius, spacing, typography } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 function interleaveExploreItems(posts, reels) {
   const normalizedPosts = (Array.isArray(posts) ? posts : []).filter((post) => post?._id && resolvePostMediaUrl(post)).map((post) => ({
@@ -151,7 +153,8 @@ export default function ExploreScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
-        <Text style={styles.logo}>Explore</Text>
+        <View><Text style={styles.eyebrow}>SNAPLY DISCOVER</Text><Text style={styles.logo}>Explore</Text></View>
+        <Ionicons name="search-outline" size={22} color={colors.text} />
       </View>
 
       <FlatList
@@ -233,18 +236,26 @@ const ExploreTile = React.memo(function ExploreTile({ item, isLarge, thumbnailUr
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   headerRow: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   logo: {
-    fontSize: 28,
+    ...typography.title,
+    color: colors.text,
+  },
+  eyebrow: {
+    fontSize: 10,
+    letterSpacing: 1.4,
     fontWeight: '800',
-    color: '#111827',
+    color: colors.accent,
+    marginBottom: 4,
   },
   loadingWrap: {
     flex: 1,
@@ -258,10 +269,10 @@ const styles = StyleSheet.create({
   tileWrapper: {
     flex: 1 / 3,
     height: 126,
-    margin: 1,
-    borderRadius: 12,
+    margin: 2,
+    borderRadius: radius.md,
     overflow: 'hidden',
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.border,
   },
   largeTile: {
     flex: 1 / 2.05,

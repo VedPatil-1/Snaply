@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../services/api';
 import { publishUserUpdate, subscribeToUserUpdates } from '../services/sync';
 import { resolveMediaThumbnailUrl, resolveMediaUrl, resolvePostMediaUrl } from '../config';
+import { colors, radius, shadows, spacing, typography } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 const debounce = (fn, delay) => {
   let timeout;
@@ -312,10 +314,12 @@ export default function SearchScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
-        <Text style={styles.logo}>Search</Text>
+        <View><Text style={styles.eyebrow}>DISCOVER</Text><Text style={styles.logo}>Find your next thing</Text></View>
+        <Ionicons name="options-outline" size={22} color={colors.accent} />
       </View>
 
       <View style={styles.searchBox}>
+        <Ionicons name="search-outline" size={20} color={colors.textMuted} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -335,29 +339,43 @@ export default function SearchScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   headerRow: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.surface,
   },
   logo: {
-    fontSize: 28,
+    ...typography.title,
+    color: colors.text,
+  },
+  eyebrow: {
+    fontSize: 11,
+    letterSpacing: 1.6,
     fontWeight: '800',
-    color: '#111827',
+    color: colors.accent,
+    marginBottom: 4,
   },
   searchBox: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   input: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+    flex: 1,
+    backgroundColor: colors.input,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    ...typography.body,
     color: '#111827',
   },
   centerState: {

@@ -15,6 +15,8 @@ import { resolveMediaUrl } from '../config';
 import { socket } from '../services/socket';
 import { useFocusEffect } from '@react-navigation/native';
 import { openProfileImageViewer } from '../services/profileImageViewer';
+import { colors, radius, shadows, spacing, typography } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function InboxScreen({ navigation }) {
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -83,11 +85,11 @@ export default function InboxScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>Back</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.logo}>Inbox</Text>
-        <View style={{ width: 48 }} />
+        <Text style={styles.logo}>Chat</Text>
+        <View style={styles.headerActions}><Ionicons name="search-outline" size={21} color={colors.textSecondary} /><Ionicons name="create-outline" size={21} color={colors.textSecondary} /></View>
       </View>
 
       <FlatList
@@ -101,7 +103,7 @@ export default function InboxScreen({ navigation }) {
           const isOnline = Boolean(otherUser?.online);
 
           return (
-            <View style={styles.chatRow}>
+            <View style={[styles.chatRow, isOnline && styles.chatRowOnline]}>
               <TouchableOpacity style={styles.avatarWrap} onPress={() => openProfileImageViewer(navigation, otherUser)}>
                 <Image source={{ uri: image }} style={styles.avatar} />
                 {isOnline ? <View style={styles.onlineDot} /> : null}
@@ -112,7 +114,10 @@ export default function InboxScreen({ navigation }) {
                   <Text style={styles.username}>{displayName}</Text>
                   {item.unreadCount ? <View style={styles.badge}><Text style={styles.badgeText}>{item.unreadCount}</Text></View> : null}
                 </View>
-                <Text style={styles.lastMessage} numberOfLines={1}>{item.latestMessage?.messageType === 'image' ? '📷 Photo' : item.latestMessage?.text || item.lastMessage || ''}</Text>
+                <View style={styles.messagePreview}>
+                  {item.latestMessage?.messageType === 'image' ? <Ionicons name="image-outline" size={14} color={colors.textMuted} /> : null}
+                  <Text style={styles.lastMessage} numberOfLines={1}>{item.latestMessage?.messageType === 'image' ? 'Photo' : item.latestMessage?.text || item.lastMessage || ''}</Text>
+                </View>
               </TouchableOpacity>
             </View>
           );
@@ -125,7 +130,7 @@ export default function InboxScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   loadingState: {
     flex: 1,
@@ -136,31 +141,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: colors.border,
   },
   logo: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.title,
+    color: colors.text,
   },
   backText: {
-    fontSize: 16,
-    color: '#111827',
-    fontWeight: '600',
+    color: colors.text,
+    fontWeight: '700',
   },
   listContent: {
-    paddingVertical: 8,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   chatRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   avatarWrap: {
     position: 'relative',
@@ -192,19 +199,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   username: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.body,
+    fontWeight: '800',
+    color: colors.text,
   },
   lastMessage: {
-    fontSize: 13,
-    color: '#6b7280',
+    ...typography.caption,
+    color: colors.textSecondary,
   },
+  messagePreview: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   badge: {
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#111827',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,
@@ -214,4 +222,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  headerButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', gap: 18, width: 70, justifyContent: 'flex-end' },
+  chatRowOnline: { borderColor: '#DDD8FF', borderWidth: 1 },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { resolveMediaUrl } from '../config';
+import { colors, radius, shadows, spacing, typography } from '../theme';
 
 export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onFollowToggle, onMessage, onOpenFollowers, onOpenFollowing, onAvatarPress }) {
   const followers = user?.followersCount ?? user?.followers?.length ?? 0;
@@ -60,10 +61,11 @@ export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onFo
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 12,
-    backgroundColor: '#fff',
+    margin: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   topRow: {
     flexDirection: 'row',
@@ -99,31 +101,29 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   name: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 14,
+    ...typography.heading,
+    color: colors.text,
+    marginTop: spacing.lg,
   },
   username: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginTop: 4,
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   bio: {
-    fontSize: 14,
-    color: '#374151',
-    marginTop: 8,
-    lineHeight: 20,
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   actionRow: {
     flexDirection: 'row',
-    marginTop: 14,
-    gap: 10,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
   },
   primaryButton: {
     flex: 1,
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
     paddingVertical: 10,
     alignItems: 'center',
   },
@@ -133,15 +133,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   secondaryButton: {
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.accentSoft,
   },
   secondaryButtonText: {
     color: '#111827',
   },
   secondaryAction: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
+    backgroundColor: colors.input,
+    borderRadius: radius.sm,
     paddingVertical: 10,
     alignItems: 'center',
   },

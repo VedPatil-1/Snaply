@@ -22,6 +22,7 @@ import CreateScreen from './screens/CreateScreen';
 import ActivityScreen from './screens/ActivityScreen';
 import ProfileImageViewerScreen from './screens/ProfileImageViewerScreen';
 import { BOTTOM_TAB_BAR_HEIGHT } from './navigationLayout';
+import { colors, radius } from './theme';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
@@ -31,8 +32,8 @@ function RootTabs() {
     headerShown: false,
     tabBarShowLabel: false,
     tabBarStyle: styles.tabBar,
-    tabBarActiveTintColor: '#111827',
-    tabBarInactiveTintColor: '#64748b',
+    tabBarActiveTintColor: colors.accent,
+    tabBarInactiveTintColor: colors.textMuted,
     tabBarIcon: ({ color, size, focused }) => {
       const icons = {
         Home: focused ? 'home' : 'home-outline',
@@ -70,4 +71,18 @@ export default function App() {
   </RootStack.Navigator><StatusBar style="dark" /></NavigationContainer></SafeAreaProvider>;
 }
 
-const styles = StyleSheet.create({ tabBar: { height: BOTTOM_TAB_BAR_HEIGHT, paddingBottom: 8, paddingTop: 6, borderTopWidth: 0, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: -2 }, elevation: 8 } });
+const styles = StyleSheet.create({
+  tabBar: {
+    height: BOTTOM_TAB_BAR_HEIGHT,
+    paddingBottom: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    shadowColor: '#25204A',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: -5 },
+    elevation: 10,
+  },
+});

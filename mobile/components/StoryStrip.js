@@ -1,6 +1,7 @@
 import React from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { resolveMediaUrl } from '../config';
+import { colors, spacing, typography } from '../theme';
 
 export default function StoryStrip({ stories = [], onOpenStory, onAddStory, currentUser }) {
   const safeStories = Array.isArray(stories) ? stories : [];
@@ -31,33 +32,36 @@ export default function StoryStrip({ stories = [], onOpenStory, onAddStory, curr
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 14,
+    marginBottom: spacing.lg,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   listContent: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   storyItem: {
     alignItems: 'center',
-    marginRight: 14,
-    width: 70,
+    marginRight: spacing.lg,
+    width: 72,
   },
   ring: {
     width: 64,
     height: 64,
     borderRadius: 32,
     padding: 2,
-    backgroundColor: '#fda4af',
+    backgroundColor: colors.accentWarm,
     shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
   },
   currentUserRing: {
-    backgroundColor: '#111827',
+    backgroundColor: colors.accent,
   },
   viewedRing: {
-    backgroundColor: '#d1d5db',
+    backgroundColor: colors.borderStrong,
   },
   avatar: {
     width: '100%',
@@ -73,7 +77,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#111827',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -86,9 +90,9 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   storyLabel: {
-    marginTop: 6,
-    fontSize: 11,
-    color: '#374151',
+    marginTop: spacing.sm,
+    ...typography.caption,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
 });

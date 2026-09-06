@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { resolveMediaUrl, resolvePostMediaUrl } from '../config';
 import { Ionicons } from '@expo/vector-icons';
+import { colors, radius, shadows, spacing, typography } from '../theme';
 
 export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onSave, onProfileClick }) {
   const [commentText, setCommentText] = useState('');
@@ -197,18 +198,18 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingTop: 10,
-    paddingBottom: 14,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingBottom: spacing.md,
   },
   authorRow: {
     flexDirection: 'row',
@@ -224,27 +225,27 @@ const styles = StyleSheet.create({
   avatarFallback: { backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { color: '#374151', fontWeight: '800' },
   username: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.body,
+    fontWeight: '800',
+    color: colors.text,
   },
   location: {
-    fontSize: 11,
-    color: '#6b7280',
+    ...typography.caption,
+    color: colors.textSecondary,
     marginTop: 2,
   },
   followButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#111827',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
   },
   followingButton: {
     backgroundColor: '#e5e7eb',
   },
   followButtonText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: colors.accentDeep,
+    fontWeight: '800',
     fontSize: 12,
   },
   followingButtonText: {
