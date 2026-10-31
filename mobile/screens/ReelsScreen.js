@@ -17,10 +17,11 @@ import {
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 import ReelCommentsModal from '../components/ReelCommentsModal';
 import ReelVideoCard from '../components/ReelVideoCard';
-import { apiRequest } from '../services/api';
+import { apiRequest, toggleFollow } from '../services/api';
 import { publishUserUpdate, subscribeToUserUpdates } from '../services/sync';
 import { BOTTOM_TAB_BAR_HEIGHT } from '../navigationLayout';
 
@@ -34,6 +35,9 @@ export default function ReelsScreen({
   const [reels, setReels] = useState([]);
   const [currentUser, setCurrentUser] =
     useState(null);
+  const followVersionsRef = useRef(new Map());
+  const saveVersionsRef = useRef(new Map());
+  const saveQueuesRef = useRef(new Map());
 
   const [activeIndex, setActiveIndex] =
     useState(0);
@@ -162,11 +166,11 @@ export default function ReelsScreen({
     }, [loadReels])
   );
 
-  useEffect(() => subscribeToUserUpdates(({ currentUser: updatedCurrentUser, targetUser }) => {
+  useEffect(() => subscribeToUserUpdates(({ currentUser: updatedCurrentUser, targetUser, isFollowing }) => {
     if (updatedCurrentUser?._id && String(updatedCurrentUser._id) === String(currentUser?._id)) setCurrentUser(updatedCurrentUser);
     if (!targetUser?._id) return;
     setReels((previous) => previous.map((reel) => String(reel?.user?._id) === String(targetUser._id)
-      ? { ...reel, user: { ...reel.user, isFollowing: Boolean(updatedCurrentUser?.following?.some((id) => String(id) === String(targetUser._id))) } }
+      ? { ...reel, user: { ...reel.user, isFollowing: typeof isFollowing === 'boolean' ? isFollowing : Boolean(updatedCurrentUser?.following?.some((id) => String(id) === String(targetUser._id))) } }
       : reel));
   }), [currentUser?._id]);
 
@@ -213,7 +217,7 @@ export default function ReelsScreen({
       activeReelIdRef.current = reels[index]?._id || null;
       setActiveIndex(index);
     },
-    [reels.length, windowHeight]
+    [reels, windowHeight]
   );
 
   /*
@@ -330,7 +334,7 @@ export default function ReelsScreen({
    * SAVE
    */
   const handleSave = useCallback(
-    async (reelId, nextSaved) => {
+    (reelId, nextSaved) => {
       if (!currentUser) return;
 
       const previous =
@@ -350,9 +354,14 @@ export default function ReelsScreen({
         })
       );
 
-      try {
-        const response =
-          await apiRequest(
+      const id = String(reelId);
+      const version = (saveVersionsRef.current.get(id) || 0) + 1;
+      saveVersionsRef.current.set(id, version);
+      const request = (saveQueuesRef.current.get(id) || Promise.resolve())
+        .catch(() => null)
+        .then(async () => {
+          const response =
+            await apiRequest(
             `/users/${currentUser._id}/saved-reels/${reelId}`,
             {
               method: nextSaved
@@ -366,35 +375,29 @@ export default function ReelsScreen({
                 reelId,
               }),
             }
-          );
+            );
 
-        updateReel(
-          reelId,
-          (reel) => ({
-            ...reel,
-            isSaved:
-              Boolean(
-                response?.isSaved
-              ),
-          })
-        );
+          if (saveVersionsRef.current.get(id) === version) {
+            updateReel(
+              reelId,
+              (reel) => ({
+                ...reel,
+                isSaved: Boolean(response?.isSaved),
+              })
+            );
+          }
 
-        if (response?.user) {
-          setCurrentUser(
-            response.user
-          );
-        }
-      } catch (requestError) {
-        updateReel(
-          reelId,
-          () => previous
-        );
+          if (response?.user && saveVersionsRef.current.get(id) === version) setCurrentUser(response.user);
+          return response;
+        })
+        .catch((requestError) => {
+          if (saveVersionsRef.current.get(id) === version) updateReel(reelId, () => previous);
 
-        console.warn(
-          '[Snaply] reel save failed:',
-          requestError?.message
-        );
-      }
+          console.warn('[Snaply] reel save failed:', requestError?.message);
+          throw requestError;
+        });
+      saveQueuesRef.current.set(id, request);
+      return request;
     },
     [
       currentUser,
@@ -408,7 +411,7 @@ export default function ReelsScreen({
    */
   const handleFollowToggle =
     useCallback(
-      async (
+      (
         targetUserId,
         isFollowing
       ) => {
@@ -419,20 +422,15 @@ export default function ReelsScreen({
           return;
         }
 
-        try {
-          const response = await apiRequest(
-            `/users/${targetUserId}/follow`,
-            {
-              method: isFollowing
-                ? 'DELETE'
-                : 'POST',
+        const id = String(targetUserId);
+        const version = (followVersionsRef.current.get(id) || 0) + 1;
+        followVersionsRef.current.set(id, version);
+        setReels((previous) => previous.map((reel) => String(reel?.user?._id) === id
+          ? { ...reel, user: { ...reel.user, isFollowing: !isFollowing } }
+          : reel));
 
-              body: JSON.stringify({
-                currentUserId:
-                  currentUser._id,
-              }),
-            }
-          );
+        return toggleFollow(currentUser._id, targetUserId, isFollowing).then((response) => {
+          if (followVersionsRef.current.get(id) !== version) return response;
 
           setReels((previous) =>
             previous.map((reel) => {
@@ -450,18 +448,25 @@ export default function ReelsScreen({
                 user: {
                   ...reel.user,
                   isFollowing:
-                    !isFollowing,
+                    Boolean(response?.isFollowing),
                 },
               };
             })
           );
           publishUserUpdate(response);
-        } catch (requestError) {
+          return response;
+        }).catch((requestError) => {
+          if (followVersionsRef.current.get(id) === version) {
+            setReels((previous) => previous.map((reel) => String(reel?.user?._id) === id
+              ? { ...reel, user: { ...reel.user, isFollowing } }
+              : reel));
+          }
           console.warn(
             '[Snaply] follow failed:',
             requestError?.message
           );
-        }
+          throw requestError;
+        });
       },
       [currentUser]
     );
@@ -584,6 +589,14 @@ export default function ReelsScreen({
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.feedContainer}>
+        <TouchableOpacity
+          style={styles.createReelButton}
+          onPress={() => navigation.navigate('Create', { mode: 'reel' })}
+          accessibilityRole="button"
+          accessibilityLabel="Add Reel"
+        >
+          <Ionicons name="add" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
         <FlatList
           ref={flatListRef}
           data={reels}
@@ -661,6 +674,18 @@ const styles = StyleSheet.create({
   feedContainer: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  createReelButton: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,17,17,0.82)',
   },
 
   centered: {

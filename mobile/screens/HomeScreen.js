@@ -16,28 +16,36 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import PostCard from '../components/PostCard';
 import StoryStrip from '../components/StoryStrip';
 import StoryViewer from '../components/StoryViewer';
-import { apiRequest } from '../services/api';
+import { apiRequest, toggleFollow } from '../services/api';
 import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
+import { colors, radius, spacing } from '../theme';
 
 function storiesToViewerGroups(storyRows) {
   return (Array.isArray(storyRows) ? storyRows : [])
     .filter((row) => row?.isCurrentUser || Array.isArray(row?.stories) && row.stories.length)
-    .map((row) => ({
-      userId: row.userId || (row.isCurrentUser ? row.id.replace(/^create-/, '') : row.id),
-      name: row.name,
-      label: row.label,
-      avatar: row.avatar,
-      isCurrentUser: Boolean(row.isCurrentUser),
-      viewed: Boolean(row.viewed),
-      stories: (row.stories || []).map((story) => ({
-        ...story,
+    .map((row) => {
+      const resolvedUserId = row.userId
+        || (row.isCurrentUser
+          ? String(row.id || '').replace(/^create-/, '')
+          : row.id);
+
+      return {
+        userId: resolvedUserId,
         name: row.name,
         label: row.label,
         avatar: row.avatar,
-        userId: row.userId,
         isCurrentUser: Boolean(row.isCurrentUser),
-      })),
-    }));
+        viewed: Boolean(row.viewed),
+        stories: (row.stories || []).map((story) => ({
+          ...story,
+          name: row.name,
+          label: row.label,
+          avatar: row.avatar,
+          userId: resolvedUserId,
+          isCurrentUser: Boolean(row.isCurrentUser),
+        })),
+      };
+    });
 }
 
 export default function HomeScreen({ navigation }) {
@@ -52,14 +60,24 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const viewedStoryRequestsRef = React.useRef(new Set());
+  const likeQueuesRef = React.useRef(new Map());
+  const saveQueuesRef = React.useRef(new Map());
+  const likeVersionsRef = React.useRef(new Map());
+  const saveVersionsRef = React.useRef(new Map());
+  const likeServerStateRef = React.useRef(new Map());
+  const followVersionsRef = React.useRef(new Map());
 
   const openStoryGroup = useCallback((storyGroup, storyIndex) => {
     const groups = storiesToViewerGroups(stories);
     const storyGroupId = String(storyGroup.userId || storyGroup.id || '');
     const nextUserIndex = Math.max(0, groups.findIndex((group) => String(group.userId) === storyGroupId));
+    const selectedGroup = groups[nextUserIndex];
+    const maxStoryIndex = Math.max(0, (selectedGroup?.stories?.length || 1) - 1);
+    const requestedStoryIndex = Number.isFinite(Number(storyIndex)) ? Number(storyIndex) : 0;
     setUsersWithStories(groups);
     setCurrentUserIndex(nextUserIndex);
-    setCurrentStoryIndex(0);
+    setCurrentStoryIndex(Math.min(Math.max(0, requestedStoryIndex), maxStoryIndex));
     setIsStoryViewerOpen(true);
   }, [stories]);
 
@@ -123,88 +141,126 @@ export default function HomeScreen({ navigation }) {
           : post
       )));
     });
-    const unsubscribeUser = subscribeToUserUpdates(({ currentUser: updatedUser, targetUser }) => {
+    const unsubscribeUser = subscribeToUserUpdates(({ currentUser: updatedUser, targetUser, isFollowing }) => {
       if (updatedUser?._id && String(updatedUser._id) === String(currentUser?._id)) setCurrentUser(updatedUser);
       if (!targetUser?._id) return;
       setPosts((prev) => prev.map((post) => (
         String(post.user?._id) === String(targetUser._id)
-          ? { ...post, user: { ...post.user, isFollowing: Boolean(updatedUser?.following?.some((id) => String(id) === String(targetUser._id))) } }
+          ? { ...post, user: { ...post.user, isFollowing: typeof isFollowing === 'boolean' ? isFollowing : Boolean(updatedUser?.following?.some((id) => String(id) === String(targetUser._id))) } }
           : post
       )));
     });
     return () => { unsubscribePost(); unsubscribeUser(); };
   }, [currentUser?._id]);
 
-  const handleLike = async (postId) => {
+  const handleLike = (postId, nextLiked) => {
     if (!currentUser) return;
 
-    try {
-      const updatedPost = await apiRequest(`/posts/${postId}/like`, {
-        method: 'POST',
-        body: JSON.stringify({ userId: currentUser._id }),
+    const id = String(postId);
+    const version = (likeVersionsRef.current.get(id) || 0) + 1;
+    likeVersionsRef.current.set(id, version);
+    const request = (likeQueuesRef.current.get(id) || Promise.resolve())
+      .catch(() => null)
+      .then(async () => {
+        const currentServerState = likeServerStateRef.current.has(id)
+          ? likeServerStateRef.current.get(id)
+          : Boolean(posts.find((post) => String(post._id) === id)?.isLiked);
+        if (currentServerState === Boolean(nextLiked)) {
+          return { isLiked: currentServerState };
+        }
+
+        const updatedPost = await apiRequest(`/posts/${postId}/like`, {
+          method: 'POST',
+          body: JSON.stringify({ userId: currentUser._id }),
+        });
+        likeServerStateRef.current.set(id, Boolean(updatedPost?.isLiked));
+
+        if (likeVersionsRef.current.get(id) === version) {
+          setPosts((prev) => prev.map((post) => (
+            String(post._id) === String(postId)
+              ? { ...post, ...updatedPost, user: { ...post.user, ...(updatedPost.user || {}), isFollowing: post.user?.isFollowing } }
+              : post
+          )));
+          publishPostUpdate(updatedPost);
+        }
+        return updatedPost;
       });
 
-      setPosts((prev) => prev.map((post) => (
-        String(post._id) === String(postId)
-          ? { ...post, ...updatedPost, user: { ...post.user, ...(updatedPost.user || {}), isFollowing: post.user?.isFollowing } }
-          : post
-      )));
-      publishPostUpdate(updatedPost);
-    } catch (loadError) {
-      console.warn('Like toggle failed:', loadError.message);
-    }
+    likeQueuesRef.current.set(id, request);
+    return request;
   };
 
-  const handleSave = async (postId, nextSaved) => {
+  const handleSave = (postId, nextSaved) => {
     if (!currentUser) return;
-    try {
-      const updated = await apiRequest(`/users/${currentUser._id}/saved-posts/${postId}`, {
-        method: nextSaved ? 'POST' : 'DELETE',
-        body: JSON.stringify({ userId: currentUser._id, postId }),
+
+    const id = String(postId);
+    const version = (saveVersionsRef.current.get(id) || 0) + 1;
+    saveVersionsRef.current.set(id, version);
+    const request = (saveQueuesRef.current.get(id) || Promise.resolve())
+      .catch(() => null)
+      .then(async () => {
+        const updated = await apiRequest(`/users/${currentUser._id}/saved-posts/${postId}`, {
+          method: nextSaved ? 'POST' : 'DELETE',
+          body: JSON.stringify({ userId: currentUser._id, postId }),
+        });
+        if (saveVersionsRef.current.get(id) === version) {
+          setPosts((prev) => prev.map((post) => String(post._id) === String(postId) ? { ...post, isSaved: Boolean(updated?.isSaved) } : post));
+          publishPostUpdate({ ...updated?.post, _id: postId, isSaved: Boolean(updated?.isSaved) });
+        }
+        return updated;
       });
-      setPosts((prev) => prev.map((post) => String(post._id) === String(postId) ? { ...post, isSaved: Boolean(updated?.isSaved) } : post));
-      publishPostUpdate({ ...updated?.post, _id: postId, isSaved: Boolean(updated?.isSaved) });
-    } catch (error) {
-      console.warn('Save toggle failed:', error.message);
-    }
+
+    saveQueuesRef.current.set(String(postId), request);
+    return request;
   };
 
-  const handleFollowToggle = async (targetUserId, isFollowing) => {
+  const handleFollowToggle = (targetUserId, isFollowing) => {
     if (!currentUser || !targetUserId) return;
 
-    try {
-      const method = isFollowing ? 'DELETE' : 'POST';
-      const response = await apiRequest(`/users/${targetUserId}/follow`, {
-        method,
-        body: JSON.stringify({ currentUserId: currentUser._id }),
+    const id = String(targetUserId);
+    const nextFollowing = !isFollowing;
+    const version = (followVersionsRef.current.get(id) || 0) + 1;
+    followVersionsRef.current.set(id, version);
+    setPosts((prev) => prev.map((post) => post.user && String(post.user._id) === id
+      ? { ...post, user: { ...post.user, isFollowing: nextFollowing } }
+      : post));
+
+    const request = toggleFollow(currentUser._id, targetUserId, isFollowing)
+      .then((response) => {
+        if (followVersionsRef.current.get(id) === version) {
+          setPosts((prev) => prev.map((post) => post.user && String(post.user._id) === id
+            ? { ...post, user: { ...post.user, isFollowing: Boolean(response?.isFollowing) } }
+            : post));
+          publishUserUpdate(response);
+        }
+        return response;
+      })
+      .catch((error) => {
+        if (followVersionsRef.current.get(id) === version) {
+          setPosts((prev) => prev.map((post) => post.user && String(post.user._id) === id
+            ? { ...post, user: { ...post.user, isFollowing } }
+            : post));
+        }
+        console.warn('Follow toggle failed:', error.message);
+        throw error;
       });
 
-      setPosts((prev) =>
-        prev.map((post) =>
-          post.user && String(post.user._id) === String(targetUserId)
-            ? {
-                ...post,
-                user: {
-                  ...post.user,
-                  isFollowing: !isFollowing,
-                },
-              }
-            : post
-        )
-      );
-
-      if (response?.targetUser) {
-        publishUserUpdate(response);
-      }
-    } catch (loadError) {
-      console.warn('Follow toggle failed:', loadError.message);
-    }
+    return request;
   };
 
   const handleAddComment = async (postId, text) => {
     if (!currentUser || !text) return;
 
     console.log('[Snaply] comment submit started');
+    const optimisticComment = {
+      _id: `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      user: currentUser,
+      text: text.trim(),
+    };
+    setPosts((prev) => prev.map((post) => String(post._id) === String(postId)
+      ? { ...post, comments: [...(post.comments || []), optimisticComment], commentsCount: Number(post.commentsCount || post.comments?.length || 0) + 1 }
+      : post));
+
     try {
       const updatedPost = await apiRequest(`/posts/${postId}/comments`, {
         method: 'POST',
@@ -237,6 +293,9 @@ export default function HomeScreen({ navigation }) {
       console.log('[Snaply] comment count updated');
       return normalizedPost;
     } catch (loadError) {
+      setPosts((prev) => prev.map((post) => String(post._id) === String(postId)
+        ? { ...post, comments: (post.comments || []).filter((comment) => comment._id !== optimisticComment._id), commentsCount: Math.max(0, Number(post.commentsCount || 0) - 1) }
+        : post));
       console.warn('Comment failed:', loadError.message);
       throw loadError;
     }
@@ -267,23 +326,34 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleStoryViewed = useCallback(async (story) => {
-    if (!currentUser || !story?.id || story?.isCurrentUser) return;
+    if (!currentUser || !story?.id) return;
+    const storyId = String(story.id);
+    const storyUserId = String(story.userId || '');
+    if (!storyUserId) return;
+    if (viewedStoryRequestsRef.current.has(storyId)) return;
+    viewedStoryRequestsRef.current.add(storyId);
+
+    const updateViewedStory = (viewed) => {
+      setStories((previous) => previous.map((item) => {
+        if (String(item.userId || item.id) !== storyUserId) return item;
+        const nextStoryList = (item.stories || []).map((entry) => String(entry.id) === storyId ? { ...entry, viewed } : entry);
+        return { ...item, stories: nextStoryList, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed) };
+      }));
+      setUsersWithStories((previous) => previous.map((group) => {
+        if (String(group.userId) !== storyUserId) return group;
+        const nextStoryList = group.stories.map((entry) => String(entry.id) === storyId ? { ...entry, viewed } : entry);
+        return { ...group, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed), stories: nextStoryList };
+      }));
+    };
+
     try {
       await apiRequest(`/stories/${story.id}/view`, {
         method: 'POST',
         body: JSON.stringify({ userId: currentUser._id }),
       });
-      setStories((previous) => previous.map((item) => {
-        if (String(item.userId || item.id) !== String(story.userId || story.id)) return item;
-        const nextStoryList = (item.stories || []).map((entry) => String(entry.id) === String(story.id) ? { ...entry, viewed: true } : entry);
-        return { ...item, stories: nextStoryList, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed) };
-      }));
-      setUsersWithStories((previous) => previous.map((group) => {
-        if (String(group.userId) !== String(story.userId)) return group;
-        const nextStoryList = group.stories.map((entry) => String(entry.id) === String(story.id) ? { ...entry, viewed: true } : entry);
-        return { ...group, viewed: nextStoryList.length > 0 && nextStoryList.every((entry) => entry.viewed), stories: nextStoryList };
-      }));
+      updateViewedStory(true);
     } catch (error) {
+      viewedStoryRequestsRef.current.delete(storyId);
       console.warn('Story view update failed:', error.message);
     }
   }, [currentUser]);
@@ -340,7 +410,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingState}>
-          <ActivityIndicator size="large" color="#111827" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       </SafeAreaView>
     );
@@ -349,16 +419,19 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
-        <Text style={styles.logo}>Snaply</Text>
+        <View>
+          <Text style={styles.kicker}>CURATED FOR YOU</Text>
+          <Text style={styles.logo}>Snaply</Text>
+        </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Create')} accessibilityLabel="Create">
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Create', { mode: 'post' })} accessibilityRole="button" accessibilityLabel="Create post">
             <Ionicons name="add" size={20} color="#6657E8" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Inbox')}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Inbox')} accessibilityRole="button" accessibilityLabel="Messages">
             <Ionicons name="chatbubble-ellipses-outline" size={19} color="#6657E8" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Activity')}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Activity')} accessibilityRole="button" accessibilityLabel="Notifications">
             <Ionicons name="notifications-outline" size={19} color="#6657E8" />
           </TouchableOpacity>
         </View>
@@ -385,7 +458,10 @@ export default function HomeScreen({ navigation }) {
           {posts.length === 0 ? (
             <View style={styles.centerState}>
               <Text style={styles.emptyTitle}>No posts yet</Text>
-              <Text style={styles.emptyText}>Your feed is empty.</Text>
+              <Text style={styles.emptyText}>Follow people or create your first snap.</Text>
+              <TouchableOpacity style={styles.emptyButton} onPress={() => navigation.navigate('Create', { mode: 'post' })}>
+                <Text style={styles.emptyButtonText}>Create a post</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             posts.map((post) => (
@@ -423,7 +499,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F7F8FC',
+    backgroundColor: colors.bg,
   },
   loadingState: {
     flex: 1,
@@ -434,17 +510,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#ECEEF5',
   },
   logo: {
-    fontSize: 28,
+    fontFamily: undefined,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#151827',
+    color: '#111111',
     letterSpacing: -0.6,
+  },
+  kicker: {
+    color: colors.textMuted,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 2,
+    fontWeight: '800',
+    marginBottom: 1,
   },
   headerActions: {
     flexDirection: 'row',
@@ -454,7 +539,8 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#EEEAFE',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -475,6 +561,17 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#6b7280',
     textAlign: 'center',
+  },
+  emptyButton: {
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  emptyButtonText: {
+    color: '#fff',
+    fontWeight: '800',
   },
   errorTitle: {
     fontSize: 20,

@@ -349,15 +349,18 @@ export default function ReelVideoCard({
 
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => {
+          onPress={async () => {
             const nextSaved = !isSaved;
+            const previousSaved = isSaved;
 
             setIsSaved(nextSaved);
 
-            onSave?.(
-              reel?._id,
-              nextSaved
-            );
+            try {
+              const response = await onSave?.(reel?._id, nextSaved);
+              if (response?.isSaved !== undefined) setIsSaved(Boolean(response.isSaved));
+            } catch (error) {
+              setIsSaved(previousSaved);
+            }
           }}
         >
           <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={26} color="#fff" />
@@ -615,9 +618,7 @@ const styles = StyleSheet.create({
   },
 
   followingButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderWidth: 1,
-    borderColor: '#fff',
+    backgroundColor: colors.accent,
   },
 
   followText: {

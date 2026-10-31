@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { apiRequest } from '../services/api';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { apiRequest, toggleFollow } from '../services/api';
 import PostCard from '../components/PostCard';
 import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 
@@ -11,6 +12,9 @@ export default function PostDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const likeQueueRef = useRef(Promise.resolve());
+  const likeServerStateRef = useRef(null);
+  const followVersionRef = useRef(0);
 
   useEffect(() => {
     const loadPost = async () => {
@@ -41,10 +45,10 @@ export default function PostDetailScreen({ route, navigation }) {
     const unsubscribePost = subscribeToPostUpdates((updatedPost) => {
       if (String(updatedPost._id) === String(postId)) mergePost(updatedPost);
     });
-    const unsubscribeUser = subscribeToUserUpdates(({ currentUser: updatedUser, targetUser }) => {
+    const unsubscribeUser = subscribeToUserUpdates(({ currentUser: updatedUser, targetUser, isFollowing }) => {
       if (updatedUser?._id && String(updatedUser._id) === String(currentUser?._id)) setCurrentUser(updatedUser);
       if (targetUser?._id && String(targetUser._id) === String(post?.user?._id)) {
-        setPost((previous) => previous ? { ...previous, user: { ...previous.user, followersCount: targetUser.followers?.length, followingCount: targetUser.following?.length } } : previous);
+        setPost((previous) => previous ? { ...previous, user: { ...previous.user, followersCount: targetUser.followers?.length, followingCount: targetUser.following?.length, ...(typeof isFollowing === 'boolean' ? { isFollowing } : {}) } } : previous);
       }
     });
     return () => { unsubscribePost(); unsubscribeUser(); };
@@ -60,20 +64,68 @@ export default function PostDetailScreen({ route, navigation }) {
   };
 
   const mergePost = (updated) => setPost((previous) => ({ ...previous, ...updated, user: { ...previous.user, ...(updated.user || {}), isFollowing: previous.user?.isFollowing } }));
-  const handleLike = async () => {
-    const updated = await apiRequest(`/posts/${post._id}/like`, { method: 'POST', body: JSON.stringify({ userId: currentUser._id }) });
-    mergePost(updated);
-    publishPostUpdate(updated);
+  const handleLike = (targetPostId, nextLiked) => {
+    const request = likeQueueRef.current
+      .catch(() => null)
+      .then(async () => {
+        const currentServerState = likeServerStateRef.current ?? Boolean(post?.isLiked);
+        if (currentServerState === Boolean(nextLiked)) return { isLiked: currentServerState };
+        const updated = await apiRequest(`/posts/${targetPostId}/like`, { method: 'POST', body: JSON.stringify({ userId: currentUser._id }) });
+        likeServerStateRef.current = Boolean(updated?.isLiked);
+        mergePost(updated);
+        publishPostUpdate(updated);
+        return updated;
+      });
+    likeQueueRef.current = request;
+    return request;
   };
-  const handleFollowToggle = async (targetUserId, isFollowing) => {
-    const response = await apiRequest(`/users/${targetUserId}/follow`, { method: isFollowing ? 'DELETE' : 'POST', body: JSON.stringify({ currentUserId: currentUser._id }) });
+  const handleFollowToggle = (targetUserId, isFollowing) => {
+    const version = followVersionRef.current + 1;
+    followVersionRef.current = version;
     setPost((previous) => ({ ...previous, user: { ...previous.user, isFollowing: !isFollowing } }));
-    publishUserUpdate(response);
+    return toggleFollow(currentUser._id, targetUserId, isFollowing).then((response) => {
+      if (followVersionRef.current !== version) return response;
+      setPost((previous) => ({ ...previous, user: { ...previous.user, isFollowing: Boolean(response?.isFollowing) } }));
+      publishUserUpdate(response);
+      return response;
+    }).catch((error) => {
+      if (followVersionRef.current === version) setPost((previous) => ({ ...previous, user: { ...previous.user, isFollowing } }));
+      throw error;
+    });
   };
   const handleAddComment = async (_postId, text) => {
+    const optimisticComment = {
+      _id: `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      user: currentUser,
+      text: text.trim(),
+    };
+    setPost((previous) => previous ? {
+      ...previous,
+      comments: [...(previous.comments || []), optimisticComment],
+      commentsCount: Number(previous.commentsCount || previous.comments?.length || 0) + 1,
+    } : previous);
+
+    try {
     const updated = await apiRequest(`/posts/${post._id}/comments`, { method: 'POST', body: JSON.stringify({ userId: currentUser._id, text }) });
     mergePost(updated);
     publishPostUpdate(updated);
+    return updated;
+    } catch (error) {
+      setPost((previous) => previous ? {
+        ...previous,
+        comments: (previous.comments || []).filter((comment) => comment._id !== optimisticComment._id),
+        commentsCount: Math.max(0, Number(previous.commentsCount || 0) - 1),
+      } : previous);
+      throw error;
+    }
+  };
+  const handleSave = async (_postId, nextSaved) => {
+    const updated = await apiRequest(`/users/${currentUser._id}/saved-posts/${post._id}`, {
+      method: nextSaved ? 'POST' : 'DELETE',
+      body: JSON.stringify({ userId: currentUser._id, postId: post._id }),
+    });
+    mergePost({ ...post, isSaved: Boolean(updated?.isSaved) });
+    return updated;
   };
   const handleShare = async (item) => Share.share({ message: item.mediaUrl || item.caption || 'Snaply post' });
 
@@ -101,15 +153,19 @@ export default function PostDetailScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>Back</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={28} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.header}>Post</Text>
         <View style={styles.spacer} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <PostCard post={post} currentUser={currentUser} onLike={handleLike} onFollowToggle={handleFollowToggle} onAddComment={handleAddComment} onShare={handleShare} onProfileClick={handleProfileClick} />
+        <PostCard post={post} currentUser={currentUser} onLike={handleLike} onFollowToggle={handleFollowToggle} onAddComment={handleAddComment} onShare={handleShare} onSave={handleSave} onProfileClick={handleProfileClick} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -119,11 +175,9 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fff' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   content: { padding: 18 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 4 },
-  backText: { color: '#111827', fontSize: 16, fontWeight: '600' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 52, paddingHorizontal: 8 },
+  backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   spacer: { width: 40 },
-  header: { fontSize: 28, fontWeight: '800', color: '#111827', marginBottom: 12 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   avatar: { width: 44, height: 44, borderRadius: 22, marginRight: 10 },
   userMeta: { flex: 1 },
   username: { color: '#111827', fontWeight: '700', fontSize: 15 },

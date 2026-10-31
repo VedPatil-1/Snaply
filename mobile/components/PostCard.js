@@ -10,29 +10,37 @@ import {
 } from 'react-native';
 import { resolveMediaUrl, resolvePostMediaUrl } from '../config';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { colors, radius, shadows, spacing, typography } from '../theme';
+import Video from 'react-native-video';
+import { colors, radius, spacing, typography } from '../theme';
 
 export default function PostCard({ post, currentUser, onLike, onFollowToggle, onAddComment, onShare, onSave, onProfileClick }) {
+  const resolvedMediaUrl = resolvePostMediaUrl(post);
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [mediaAspectRatio, setMediaAspectRatio] = useState(0.8);
+  const [mediaLoading, setMediaLoading] = useState(Boolean(resolvedMediaUrl));
+  const [mediaError, setMediaError] = useState(false);
   const lastTapRef = useRef(0);
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
+  const mediaPulse = useRef(new Animated.Value(0.35)).current;
+  const actionVersionRef = useRef({ like: 0, save: 0 });
+  const [optimisticLiked, setOptimisticLiked] = useState(Boolean(post.isLiked));
+  const [optimisticLikesCount, setOptimisticLikesCount] = useState(Number(post.likesCount ?? post.likes?.length ?? 0));
+  const [optimisticSaved, setOptimisticSaved] = useState(Boolean(post.isSaved));
 
   const isCurrentUser = currentUser && post.user && String(post.user._id) === String(currentUser._id);
   const isFollowing = post.user && post.user.isFollowing;
-  const caption = post.caption || 'No caption';
+  const caption = String(post.caption || '').trim();
+  const isVideo = String(post.mediaType || '').toLowerCase() === 'video';
   const comments = Array.isArray(post.comments)
     ? [...new Map(post.comments
       .filter((comment) => comment?._id)
       .map((comment) => [String(comment._id), comment])).values()].reverse()
     : [];
-  const likesCount = post.likesCount || post.likes?.length || 0;
-  const saved = Boolean(post.isSaved);
-  const resolvedMediaUrl = resolvePostMediaUrl(post);
-
+  const likesCount = optimisticLikesCount;
+  const saved = optimisticSaved;
   useEffect(() => {
     console.log('[Snaply] post media', {
       id: post?._id,
@@ -40,11 +48,55 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       original: post?.mediaUrl || post?.imageUrl || post?.media?.url || post?.image || post?.url,
       resolved: resolvedMediaUrl,
     });
-  }, [post?._id, post?.mediaType, resolvedMediaUrl]);
+  }, [
+    post?._id,
+    post?.mediaType,
+    post?.mediaUrl,
+    post?.imageUrl,
+    post?.media?.url,
+    post?.image,
+    post?.url,
+    resolvedMediaUrl,
+  ]);
 
   useEffect(() => {
     if (showComments) console.log('[Snaply] comments rendered:', comments.length);
   }, [showComments, comments.length]);
+
+  useEffect(() => {
+    setOptimisticLiked(Boolean(post.isLiked));
+    setOptimisticLikesCount(Number(post.likesCount ?? post.likes?.length ?? 0));
+    setOptimisticSaved(Boolean(post.isSaved));
+  }, [post._id, post.isLiked, post.likesCount, post.likes?.length, post.isSaved]);
+
+  useEffect(() => {
+    setMediaLoading(Boolean(resolvedMediaUrl));
+    setMediaError(false);
+    setMediaAspectRatio(0.8);
+  }, [resolvedMediaUrl]);
+
+  useEffect(() => {
+    if (!mediaLoading) return undefined;
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mediaPulse, { toValue: 1, duration: 750, useNativeDriver: true }),
+        Animated.timing(mediaPulse, { toValue: 0.35, duration: 750, useNativeDriver: true }),
+      ]),
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [mediaLoading, mediaPulse]);
+
+  const formatPostTime = (value) => {
+    const timestamp = new Date(value).getTime();
+    if (!value || Number.isNaN(timestamp)) return 'Just now';
+    const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+    if (minutes < 10080) return `${Math.floor(minutes / 1440)}d`;
+    return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const triggerHeart = () => {
     setShowHeart(true);
@@ -72,24 +124,61 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
     const now = Date.now();
 
     if (now - lastTapRef.current < 300) {
-      if (!post.isLiked) {
-        onLike(post._id);
-      }
+      if (!optimisticLiked) handleLikePress();
       triggerHeart();
     }
 
     lastTapRef.current = now;
   };
 
-  const handleSubmitComment = async () => {
-    if (!commentText.trim()) return;
-    setShowComments(true);
+  const handleLikePress = async () => {
+    const actionVersion = actionVersionRef.current.like + 1;
+    actionVersionRef.current.like = actionVersion;
+    const previousLiked = optimisticLiked;
+    const previousCount = optimisticLikesCount;
+    const nextLiked = !previousLiked;
+    setOptimisticLiked(nextLiked);
+    setOptimisticLikesCount(Math.max(0, previousCount + (nextLiked ? 1 : -1)));
 
     try {
-      await onAddComment(post._id, commentText.trim());
-      setCommentText('');
+      const response = await onLike?.(post._id, nextLiked);
+      if (actionVersionRef.current.like !== actionVersion) return;
+      if (response?.isLiked !== undefined) setOptimisticLiked(Boolean(response.isLiked));
+      if (response?.likesCount !== undefined) setOptimisticLikesCount(Number(response.likesCount));
     } catch (error) {
-      // Keep the typed comment available when the existing API fails.
+      if (actionVersionRef.current.like !== actionVersion) return;
+      setOptimisticLiked(previousLiked);
+      setOptimisticLikesCount(previousCount);
+    }
+  };
+
+  const handleSavePress = async () => {
+    const actionVersion = actionVersionRef.current.save + 1;
+    actionVersionRef.current.save = actionVersion;
+    const previousSaved = optimisticSaved;
+    const nextSaved = !previousSaved;
+    setOptimisticSaved(nextSaved);
+
+    try {
+      const response = await onSave?.(post._id, nextSaved);
+      if (actionVersionRef.current.save !== actionVersion) return;
+      if (response?.isSaved !== undefined) setOptimisticSaved(Boolean(response.isSaved));
+    } catch (error) {
+      if (actionVersionRef.current.save !== actionVersion) return;
+      setOptimisticSaved(previousSaved);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim()) return;
+    const submittedText = commentText.trim();
+    setShowComments(true);
+    setCommentText('');
+
+    try {
+      await onAddComment(post._id, submittedText);
+    } catch (error) {
+      setCommentText(submittedText);
     }
   };
 
@@ -98,9 +187,11 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.authorRow} activeOpacity={0.8} onPress={() => onProfileClick?.(post.user?._id)}>
           {post.user?.profilePicture ? <Image source={{ uri: resolveMediaUrl(post.user.profilePicture) }} style={styles.avatar} /> : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarInitial}>{post.user?.username?.charAt(0)?.toUpperCase() || 'U'}</Text></View>}
-          <View>
+          <View style={styles.authorText}>
             <Text style={styles.username}>{post.user?.username || 'unknown'}</Text>
-            {post.location ? <Text style={styles.location}>{post.location}</Text> : null}
+            <Text style={styles.location} numberOfLines={1}>
+              {post.location || formatPostTime(post.createdAt)}
+            </Text>
           </View>
         </TouchableOpacity>
 
@@ -114,23 +205,68 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
             </Text>
           </TouchableOpacity>
         ) : null}
+        <TouchableOpacity style={styles.moreButton} accessibilityLabel="Post menu">
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap}>
         <View style={[styles.mediaContainer, { aspectRatio: mediaAspectRatio }]}>
           {resolvedMediaUrl ? (
-            <Image
-              source={{ uri: resolvedMediaUrl }}
-              style={styles.image}
-              resizeMode="contain"
-              onLoad={(event) => {
-                const source = event.nativeEvent?.source;
-                if (source?.width && source?.height) {
-                  setMediaAspectRatio(Math.max(0.8, source.width / source.height));
-                }
-              }}
-            />
-          ) : <View style={[styles.image, styles.mediaFallback]} />}
+            <>
+              {isVideo ? (
+                <Video
+                  source={{ uri: resolvedMediaUrl }}
+                  style={styles.image}
+                  resizeMode="cover"
+                  paused
+                  muted
+                  repeat={false}
+                  controls
+                  onLoad={() => setMediaLoading(false)}
+                  onError={() => {
+                    setMediaLoading(false);
+                    setMediaError(true);
+                  }}
+                />
+              ) : <Image
+                source={{ uri: resolvedMediaUrl }}
+                style={styles.image}
+                resizeMode="cover"
+                onLoadStart={() => {
+                  setMediaLoading(true);
+                  setMediaError(false);
+                }}
+                onLoad={(event) => {
+                  setMediaLoading(false);
+                  const source = event.nativeEvent?.source;
+                  if (source?.width && source?.height) {
+                    setMediaAspectRatio(Math.min(1.35, Math.max(0.75, source.width / source.height)));
+                  }
+                }}
+                onError={() => {
+                  setMediaLoading(false);
+                  setMediaError(true);
+                }}
+              />}
+              {mediaLoading ? (
+                <Animated.View style={[styles.mediaStatus, styles.mediaSkeleton, { opacity: mediaPulse }]}>
+                  <View style={styles.skeletonMark} />
+                </Animated.View>
+              ) : null}
+              {mediaError ? (
+                <View style={styles.mediaStatus}>
+                  <Ionicons name="image-outline" size={28} color={colors.textMuted} />
+                  <Text style={styles.mediaStatusText}>This snap could not be loaded.</Text>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.mediaStatus}>
+              <Ionicons name="images-outline" size={30} color={colors.textMuted} />
+              <Text style={styles.mediaStatusText}>Media is unavailable</Text>
+            </View>
+          )}
         </View>
         {showHeart ? (
           <Animated.View
@@ -144,8 +280,8 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
 
       <View style={styles.actionRow}>
         <View style={styles.leftActions}>
-          <TouchableOpacity onPress={() => onLike(post._id)} style={styles.actionButton}>
-            <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={24} color={post.isLiked ? '#ef4444' : '#111827'} />
+          <TouchableOpacity onPress={handleLikePress} style={styles.actionButton}>
+            <Ionicons name={optimisticLiked ? 'heart' : 'heart-outline'} size={24} color={optimisticLiked ? '#ef4444' : '#111827'} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowComments((value) => !value)} style={styles.actionButton}>
             <Ionicons name="chatbubble-outline" size={22} color="#111827" />
@@ -155,17 +291,25 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => onSave?.(post._id, !saved)} style={styles.actionButton}>
+        <TouchableOpacity onPress={handleSavePress} style={styles.actionButton}>
           <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color="#111827" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.metaBlock}>
-        <Text style={styles.likesText}>{likesCount} likes</Text>
-        <Text style={styles.captionText}>
-          <Text style={styles.captionUser}>{post.user?.username || 'user'}</Text> {caption}
-        </Text>
-        <Text style={styles.timeText}>2h ago</Text>
+        <View style={styles.socialLine}>
+          <View style={styles.likeCount}>
+            {optimisticLiked ? <Ionicons name="heart" size={14} color={colors.like} /> : null}
+            <Text style={styles.likesText}>{likesCount.toLocaleString()} {likesCount === 1 ? 'like' : 'likes'}</Text>
+          </View>
+          <Text style={styles.timeText}>{formatPostTime(post.createdAt)}</Text>
+        </View>
+        {caption ? (
+          <Text style={styles.captionText}>
+            <Text style={styles.captionUser}>{post.user?.username || 'user'} </Text>
+            {caption}
+          </Text>
+        ) : null}
       </View>
 
       {showComments ? (
@@ -200,18 +344,18 @@ export default function PostCard({ post, currentUser, onLike, onFollowToggle, on
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
-    padding: spacing.md,
-    borderRadius: radius.lg,
     backgroundColor: colors.surface,
-    ...shadows.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: spacing.md,
+    paddingBottom: 12,
+    paddingHorizontal: spacing.md,
+    paddingTop: 12,
   },
   authorRow: {
     flexDirection: 'row',
@@ -223,6 +367,9 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     marginRight: 10,
+  },
+  authorText: {
+    flex: 1,
   },
   avatarFallback: { backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { color: '#374151', fontWeight: '800' },
@@ -243,20 +390,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
   },
   followingButton: {
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.accentSoft,
   },
   followButtonText: {
     color: colors.accentDeep,
     fontWeight: '800',
     fontSize: 12,
   },
+  moreButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
   followingButtonText: {
-    color: '#111827',
+    color: colors.accentDeep,
   },
   image: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.bg,
     alignSelf: 'center',
   },
   mediaContainer: {
@@ -264,12 +418,35 @@ const styles = StyleSheet.create({
     minHeight: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.bg,
     overflow: 'hidden',
   },
   mediaFallback: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mediaStatus: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  mediaStatusText: {
+    marginTop: 8,
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  mediaSkeleton: {
+    backgroundColor: '#E8E5E1',
+  },
+  skeletonMark: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#D1CCC6',
+    backgroundColor: '#F2F0ED',
   },
   heartOverlay: {
     position: 'absolute',
@@ -289,15 +466,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingHorizontal: 8,
+    paddingTop: 4,
   },
   leftActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   actionButton: {
-    marginRight: 16,
+    width: 44,
+    height: 44,
+    marginRight: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionText: {
     fontSize: 26,
@@ -315,6 +496,17 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 14,
     marginBottom: 6,
+  },
+  socialLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  likeCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   captionText: {
     color: '#374151',

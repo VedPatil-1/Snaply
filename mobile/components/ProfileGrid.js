@@ -3,7 +3,7 @@ import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react
 import { resolvePostMediaUrl } from '../config';
 import ReelGridPreview from './ReelGridPreview';
 
-export default function ProfileGrid({ posts = [], navigation }) {
+export default function ProfileGrid({ posts = [], navigation, isOwnProfile = false, onLongPressContent }) {
   if (!posts.length) {
     return (
       <View style={styles.emptyState}>
@@ -33,7 +33,12 @@ export default function ProfileGrid({ posts = [], navigation }) {
       contentContainerStyle={styles.gridContent}
       columnWrapperStyle={styles.columnWrapper}
       renderItem={({ item }) => (
-        <TouchableOpacity onPress={() => handleTilePress(item)} style={styles.tileWrapper}>
+        <TouchableOpacity
+          onPress={() => handleTilePress(item)}
+          onLongPress={isOwnProfile ? () => onLongPressContent?.(item) : undefined}
+          delayLongPress={450}
+          style={styles.tileWrapper}
+        >
           {item.videoUrl ? (
             <ReelGridPreview reel={item} style={styles.postTile} />
           ) : resolvePostMediaUrl(item) ? (

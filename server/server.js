@@ -40,6 +40,9 @@ app.get('/', (req, res) => {
   res.json({ message: 'Welcome to Snaply API' });
 });
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Snaply API is running' });
+});
 app.use('/api', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

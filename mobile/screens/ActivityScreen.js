@@ -61,8 +61,12 @@ export default function ActivityScreen({ navigation }) {
 
   useEffect(() => {
     const handler = ({ notification }) => {
-      if (!notification || String(notification.recipient) !== String(userId)) return;
-      setNotifications((prev) => [notification, ...prev]);
+      const recipientId = notification?.recipient?._id || notification?.recipient;
+      if (!notification || String(recipientId) !== String(userId)) return;
+      setNotifications((prev) => {
+        if (prev.some((item) => String(item._id) === String(notification._id))) return prev;
+        return [notification, ...prev];
+      });
     };
 
     socket.on('notification_received', handler);
@@ -109,7 +113,15 @@ export default function ActivityScreen({ navigation }) {
           } else if (item.reel?._id || item.reel) {
             navigation.navigate('ReelViewer', { reelId: item.reel?._id || item.reel });
           } else if (item.sender?._id) {
-            navigation.navigate('UserProfile', { userId: item.sender._id });
+            if (item.type === 'message' && item.conversation) {
+              navigation.navigate('ChatThread', {
+                conversationId: item.conversation?._id || item.conversation,
+                userId,
+                otherUser: item.sender,
+              });
+            } else {
+              navigation.navigate('UserProfile', { userId: item.sender._id });
+            }
           }
         };
     return (

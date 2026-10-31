@@ -4,6 +4,8 @@ import {
   Alert,
   FlatList,
   Image,
+  Modal,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,7 +17,7 @@ import { DEV_USERNAME, resolvePostMediaUrl } from '../config';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReelGridPreview from '../components/ReelGridPreview';
 import { apiRequest } from '../services/api';
-import { publishPostUpdate, publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
+import { publishPostUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, typography } from '../theme';
 
@@ -27,6 +29,10 @@ export default function ProfileScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('posts');
   const [savedPosts, setSavedPosts] = useState([]);
   const [savedReels, setSavedReels] = useState([]);
+  const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [savedView, setSavedView] = useState(null);
+  const [selectedContent, setSelectedContent] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -64,30 +70,6 @@ export default function ProfileScreen({ navigation }) {
     return () => { unsubscribePost(); unsubscribeUser(); };
   }, [user?._id]);
 
-  const handleFollowToggle = async () => {
-    if (!user || !user._id) return;
-
-    try {
-      const isFollowing = Boolean(user.isFollowing);
-      const method = isFollowing ? 'DELETE' : 'POST';
-      const result = await apiRequest(`/users/${user._id}/follow`, {
-        method,
-        body: JSON.stringify({ currentUserId: user._id }),
-      });
-
-      if (result?.currentUser) {
-        setUser((prev) => ({ ...prev, ...result.currentUser, postsCount: prev?.postsCount }));
-      }
-      publishUserUpdate(result);
-
-      if (result?.message) {
-        console.log(result.message);
-      }
-    } catch (error) {
-      console.warn('Profile follow failed:', error.message);
-    }
-  };
-
   const handleEditProfile = () => {
     navigation.navigate('EditProfile');
   };
@@ -100,27 +82,62 @@ export default function ProfileScreen({ navigation }) {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          const ownerId = item?.user?._id || item?.user?.id || item?.user;
+          if (
+            !ownerId
+            || String(ownerId) !== String(user?._id)
+          ) {
+            Alert.alert('Permission denied', 'You can only delete your own content.');
+            return;
+          }
+
           try {
+            setDeleting(true);
             await apiRequest(`/${isReel ? 'reels' : 'posts'}/${item._id}`, {
               method: 'DELETE',
               body: JSON.stringify({ userId: user._id }),
             });
-            if (isReel) setReels((prev) => prev.filter((entry) => String(entry._id) !== String(item._id)));
-            else setPosts((prev) => prev.filter((entry) => String(entry._id) !== String(item._id)));
+            setSelectedContent(null);
             setUser((prev) => ({ ...prev, postsCount: Math.max(0, Number(prev?.postsCount || 0) - 1) }));
             if (!isReel) publishPostUpdate({ _id: item._id, deleted: true });
+            await loadProfile();
           } catch (error) {
             Alert.alert('Delete failed', error.message || 'Unable to delete this item.');
+          } finally {
+            setDeleting(false);
           }
         },
       },
     ]);
   };
 
-  const displayedItems = activeTab === 'posts' ? posts
-    : activeTab === 'reels' ? reels
-      : activeTab === 'savedPosts' ? savedPosts : savedReels;
-  const isReelTab = activeTab === 'reels' || activeTab === 'savedReels';
+  const displayedItems = savedView === 'posts' ? savedPosts
+    : savedView === 'reels' ? savedReels
+      : activeTab === 'reels' ? reels : posts;
+  const isReelTab = savedView === 'reels' || (!savedView && activeTab === 'reels');
+
+  const openSavedView = (view) => {
+    setAccountMenuVisible(false);
+    setSavedView(view);
+  };
+
+  const ownsContent = (item) => {
+    if (!user?._id) return false;
+    const ownerId = item?.user?._id || item?.user?.id || item?.user;
+    return Boolean(ownerId) && String(ownerId) === String(user._id);
+  };
+
+  const openContentActions = (item) => {
+    if (!ownsContent(item) || savedView) return;
+    setSelectedContent(item);
+  };
+
+  const handleShareProfile = async () => {
+    const username = user?.username ? `@${user.username}` : 'Snaply';
+    await Share.share({
+      message: `View ${username} on Snaply`,
+    });
+  };
 
   if (loading) {
     return (
@@ -136,45 +153,53 @@ export default function ProfileScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.topBar}>
         {navigation.canGoBack() ? <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backText}>Back</Text></TouchableOpacity> : null}
-        <Text style={styles.usernameText}>@{user?.username || DEV_USERNAME}</Text>
+        <Text style={styles.usernameText}>{savedView ? (savedView === 'posts' ? 'Saved Posts' : 'Saved Reels') : `@${user?.username || DEV_USERNAME}`}</Text>
         <View style={styles.iconRow}>
-          <TouchableOpacity onPress={() => navigation.navigate('Create')} style={styles.headerIcon}>
-            <Ionicons name="add" size={21} color={colors.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Activity')} style={styles.headerIcon}>
-            <Ionicons name="notifications-outline" size={19} color={colors.accent} />
-          </TouchableOpacity>
+          {savedView ? (
+            <TouchableOpacity onPress={() => setSavedView(null)} style={styles.headerIcon} accessibilityLabel="Close saved content">
+              <Ionicons name="close" size={21} color={colors.text} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => setAccountMenuVisible(true)} style={styles.headerIcon} accessibilityLabel="Profile menu">
+              <Ionicons name="ellipsis-horizontal" size={21} color={colors.text} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
       <FlatList
         data={displayedItems}
         keyExtractor={(item) => String(item._id)}
-        numColumns={3}
+        numColumns={2}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={(
           <>
-            <ProfileHeader
+            {savedView ? null : <ProfileHeader
               user={user}
               isCurrentUser
               onEditProfile={handleEditProfile}
-              onFollowToggle={handleFollowToggle}
+              onShareProfile={handleShareProfile}
               onMessage={() => navigation.navigate('Inbox')}
               onOpenFollowers={() => navigation.navigate('RelationshipList', { userId: user?._id, relationship: 'followers' })}
               onOpenFollowing={() => navigation.navigate('RelationshipList', { userId: user?._id, relationship: 'following' })}
-            />
-            <View style={styles.tabBar}>
-              {['posts', 'reels', 'savedPosts', 'savedReels'].map((tab) => (
+            />}
+            {!savedView ? <View style={styles.tabBar}>
+              {['posts', 'reels'].map((tab) => (
                 <TouchableOpacity key={tab} style={[styles.tabButton, activeTab === tab && styles.activeTab]} onPress={() => setActiveTab(tab)}>
-                  <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab === 'savedPosts' ? 'Saved posts' : tab === 'savedReels' ? 'Saved reels' : tab[0].toUpperCase() + tab.slice(1)}</Text>
+                  <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab[0].toUpperCase() + tab.slice(1)}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </View> : null}
           </>
         )}
         ListEmptyComponent={<View style={styles.placeholderBox}><Text style={styles.placeholderText}>{isReelTab ? 'No reels yet' : 'No posts yet'}</Text></View>}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.profileTile} onPress={() => navigation.navigate(isReelTab ? 'ReelViewer' : 'PostDetail', isReelTab ? { reelId: item._id } : { postId: item._id })}>
+          <TouchableOpacity
+            style={styles.profileTile}
+            onPress={() => navigation.navigate(isReelTab ? 'ReelViewer' : 'PostDetail', isReelTab ? { reelId: item._id } : { postId: item._id })}
+            onLongPress={() => openContentActions(item)}
+            delayLongPress={450}
+          >
             {isReelTab ? (
               <ReelGridPreview reel={item} style={styles.profileTileImage} />
             ) : resolvePostMediaUrl(item) ? (
@@ -183,10 +208,43 @@ export default function ProfileScreen({ navigation }) {
               <View style={[styles.profileTileImage, styles.mediaFallback]} />
             )}
             {isReelTab ? <View style={styles.videoIndicator}><Text style={styles.profileTileText}>▶</Text></View> : null}
-            {!activeTab.includes('saved') ? <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item)}><Ionicons name="ellipsis-horizontal" size={18} color="#fff" /></TouchableOpacity> : null}
           </TouchableOpacity>
         )}
       />
+      <Modal visible={Boolean(selectedContent)} transparent animationType="fade" onRequestClose={() => setSelectedContent(null)}>
+        <TouchableOpacity style={styles.actionBackdrop} activeOpacity={1} onPress={() => setSelectedContent(null)}>
+          <View style={styles.actionSheet}>
+            <TouchableOpacity
+              style={styles.deleteAction}
+              disabled={deleting}
+              onPress={() => {
+                const item = selectedContent;
+                setSelectedContent(null);
+                handleDelete(item);
+              }}
+            >
+              <Text style={styles.deleteActionText}>{deleting ? 'Deleting...' : (isReelTab ? 'Delete Reel' : 'Delete Post')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelAction} onPress={() => setSelectedContent(null)}>
+              <Text style={styles.cancelActionText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal visible={accountMenuVisible} transparent animationType="fade" onRequestClose={() => setAccountMenuVisible(false)}>
+        <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setAccountMenuVisible(false)}>
+          <View style={styles.accountMenu}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => openSavedView('posts')}>
+              <Ionicons name="bookmark-outline" size={20} color={colors.text} />
+              <Text style={styles.menuItemText}>Saved Posts</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => openSavedView('reels')}>
+              <Ionicons name="play-outline" size={20} color={colors.text} />
+              <Text style={styles.menuItemText}>Saved Reels</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -260,7 +318,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   profileTile: {
-    width: '33.333%',
+    width: '50%',
     aspectRatio: 1,
     padding: 1,
     backgroundColor: colors.border,
@@ -292,16 +350,67 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  deleteButton: {
-    position: 'absolute',
-    right: 6,
-    top: 6,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  headerIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 17, 17, 0.18)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 54,
+    paddingRight: spacing.md,
+  },
+  accountMenu: {
+    width: 190,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 4,
+  },
+  menuItem: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    gap: 12,
+  },
+  menuItemText: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  actionBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(17, 17, 17, 0.18)',
+  },
+  actionSheet: {
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  deleteAction: {
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(17,24,39,0.72)',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  headerIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  deleteActionText: {
+    ...typography.body,
+    color: '#D12B2B',
+    fontWeight: '800',
+  },
+  cancelAction: {
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelActionText: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '700',
+  },
 });

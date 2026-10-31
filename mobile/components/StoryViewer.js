@@ -9,6 +9,9 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
   const story = useMemo(() => stories[currentStoryIndex] || null, [currentStoryIndex, stories]);
   const storyVideoUrl = story?.mediaType === 'video' ? resolveMediaUrl(story.mediaUrl) : null;
   const videoRef = React.useRef(null);
+  const viewedTimerRef = React.useRef(null);
+  const viewedStoryIdsRef = React.useRef(new Set());
+  const activeStoryIdRef = React.useRef(null);
   const [duration, setDuration] = React.useState(0);
   const [currentTime, setCurrentTime] = React.useState(0);
 
@@ -29,11 +32,12 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
     return stopPlayback;
   }, [visible, screenFocused, storyVideoUrl, story?.id, stopPlayback]);
 
-  React.useEffect(() => {
-    if (visible && story) onViewed?.(story);
-  }, [visible, story, onViewed]);
-
   const closeViewer = React.useCallback(() => {
+    if (viewedTimerRef.current) {
+      clearTimeout(viewedTimerRef.current);
+      viewedTimerRef.current = null;
+    }
+    activeStoryIdRef.current = null;
     stopPlayback();
     onClose?.();
   }, [stopPlayback, onClose]);
@@ -59,11 +63,49 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
     }
   }, [stopPlayback, currentStoryIndex, currentUserIndex, usersWithStories, onChangePosition]);
 
+  const finishCurrentStory = React.useCallback(() => {
+    goToNextStory();
+  }, [goToNextStory]);
+
+  React.useEffect(() => {
+    if (viewedTimerRef.current) {
+      clearTimeout(viewedTimerRef.current);
+      viewedTimerRef.current = null;
+    }
+
+    const storyId = story?.id ? String(story.id) : null;
+    activeStoryIdRef.current = visible && screenFocused ? storyId : null;
+
+    if (
+      !visible
+      || !screenFocused
+      || !storyId
+      || story.viewed
+      || viewedStoryIdsRef.current.has(storyId)
+    ) {
+      return undefined;
+    }
+
+    viewedTimerRef.current = setTimeout(() => {
+      viewedTimerRef.current = null;
+      if (activeStoryIdRef.current !== storyId) return;
+      viewedStoryIdsRef.current.add(storyId);
+      onViewed?.(story);
+    }, 1000);
+
+    return () => {
+      if (viewedTimerRef.current) {
+        clearTimeout(viewedTimerRef.current);
+        viewedTimerRef.current = null;
+      }
+    };
+  }, [visible, screenFocused, story, onViewed]);
+
   React.useEffect(() => {
     if (!visible || !story || storyVideoUrl) return undefined;
-    const timer = setTimeout(goToNextStory, 5000);
+    const timer = setTimeout(finishCurrentStory, 5000);
     return () => clearTimeout(timer);
-  }, [visible, story, storyVideoUrl, goToNextStory]);
+  }, [visible, story, storyVideoUrl, finishCurrentStory]);
 
   const panResponder = React.useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gestureState) => Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
@@ -99,7 +141,7 @@ export default function StoryViewer({ visible, screenFocused = true, usersWithSt
               paused={!visible || !screenFocused}
               onLoad={({ duration: loadedDuration }) => setDuration(Math.min(loadedDuration || 0, 30))}
               onProgress={({ currentTime: nextTime }) => setCurrentTime(nextTime)}
-              onEnd={goToNextStory}
+              onEnd={finishCurrentStory}
               onError={(error) => console.warn('[Snaply] story playback error:', story.id, storyVideoUrl, error?.error?.localizedDescription || error)}
             />
           ) : (

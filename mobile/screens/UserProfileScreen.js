@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../components/ProfileHeader';
 import { resolvePostMediaUrl } from '../config';
 import ReelGridPreview from '../components/ReelGridPreview';
-import { apiRequest } from '../services/api';
+import { apiRequest, toggleFollow } from '../services/api';
 import { publishUserUpdate, subscribeToPostUpdates, subscribeToUserUpdates } from '../services/sync';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -23,6 +23,7 @@ export default function UserProfileScreen({ route, navigation }) {
   const [posts, setPosts] = useState([]);
   const [reels, setReels] = useState([]);
   const [activeTab, setActiveTab] = useState('posts');
+  const followVersionRef = React.useRef(0);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
@@ -63,23 +64,25 @@ export default function UserProfileScreen({ route, navigation }) {
     return () => { unsubscribePost(); unsubscribeUser(); };
   }, [currentUser?._id, userId]);
 
-  const handleFollowToggle = async () => {
+  const handleFollowToggle = () => {
     if (!currentUser || !user?._id) return;
 
-    try {
-      const isFollowing = Boolean(user.isFollowing);
-      const method = isFollowing ? 'DELETE' : 'POST';
-      const response = await apiRequest(`/users/${user._id}/follow`, {
-        method,
-        body: JSON.stringify({ currentUserId: currentUser._id }),
-      });
+    const isFollowing = Boolean(user.isFollowing);
+    const version = followVersionRef.current + 1;
+    followVersionRef.current = version;
+    setUser((previous) => ({ ...previous, isFollowing: !isFollowing }));
 
+    return toggleFollow(currentUser._id, user._id, isFollowing).then((response) => {
+      if (followVersionRef.current !== version) return response;
       if (response?.currentUser) setCurrentUser(response.currentUser);
       if (response?.targetUser) setUser((prev) => ({ ...prev, ...response.targetUser, isFollowing: response.isFollowing, postsCount: prev?.postsCount }));
       publishUserUpdate(response);
-    } catch (error) {
+      return response;
+    }).catch((error) => {
+      if (followVersionRef.current === version) setUser((previous) => ({ ...previous, isFollowing }));
       console.warn('User follow toggle failed:', error.message);
-    }
+      throw error;
+    });
   };
 
   const handleMessage = async () => {
@@ -138,7 +141,7 @@ export default function UserProfileScreen({ route, navigation }) {
           <>
             <ProfileHeader
               user={user}
-              isCurrentUser={false}
+              isCurrentUser={Boolean(currentUser?._id && String(currentUser._id) === String(user?._id))}
               onEditProfile={() => null}
             onAvatarPress={() => null}
             onFollowToggle={handleFollowToggle}

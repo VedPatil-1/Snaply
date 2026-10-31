@@ -135,15 +135,9 @@ const markStoryViewed = async (req, res, next) => {
     if (!story) {
       return res.status(404).json({ message: 'Story not found' });
     }
-    const storyUserId = story.user;
-
     const viewer = await User.findById(viewerId).select('_id viewedStories').lean();
     if (!viewer) {
       return res.status(404).json({ message: 'User not found' });
-    }
-
-    if (String(viewerId) === String(storyUserId)) {
-      return res.status(200).json({ viewed: true, storyId, viewerId });
     }
 
     const updatedUser = await User.findByIdAndUpdate(

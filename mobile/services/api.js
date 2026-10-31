@@ -2,6 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config';
 
 const TOKEN_KEY = 'snaply_auth_token';
+
+function inferImageMimeType(uri, fileName) {
+  const source = `${fileName || ''} ${uri || ''}`.split(/[?#]/, 1)[0].toLowerCase();
+  if (/\.png(?:\s|$)/.test(source)) return 'image/png';
+  if (/\.webp(?:\s|$)/.test(source)) return 'image/webp';
+  if (/\.gif(?:\s|$)/.test(source)) return 'image/gif';
+  if (/\.heic(?:\s|$)/.test(source)) return 'image/heic';
+  return 'image/jpeg';
+}
+
 export async function setAuthToken(token) {
   if (!token) {
     await AsyncStorage.removeItem(TOKEN_KEY);
@@ -29,7 +39,9 @@ export async function uploadImageAsset(asset, onProgress) {
     throw new Error('The selected image does not have a readable URI.');
   }
 
-  const mimeType = asset.mimeType || 'image/jpeg';
+  const uri = String(asset.uri).trim();
+  const fileName = String(asset.fileName || `snaply-chat-${Date.now()}.jpg`).trim().replace(/\s+/g, '-');
+  const mimeType = asset.mimeType || asset.type || inferImageMimeType(uri, fileName);
 
   if (!mimeType.startsWith('image/')) {
     throw new Error('Please select an image file.');
@@ -40,9 +52,9 @@ export async function uploadImageAsset(asset, onProgress) {
   const formData = new FormData();
 
   formData.append('image', {
-    uri: asset.uri,
+    uri,
     type: mimeType,
-    name: asset.fileName || 'image.jpg',
+    name: fileName,
   });
 
   const response = await fetch(`${API_BASE_URL}/uploads/image`, {
@@ -59,17 +71,27 @@ export async function uploadImageAsset(asset, onProgress) {
     },
   });
 
+  const text = await response.text();
   let data = null;
-
-  try {
-    data = response.body
-      ? JSON.parse(response.body)
-      : null;
-  } catch (error) {
-    throw new Error(
-      `Image upload returned an invalid response (HTTP ${response.status}).`
-    );
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Image upload returned an invalid response (HTTP ${response.status}).`);
+    }
   }
+
+  const returnedMediaUrl =
+    data?.mediaUrl ||
+    data?.url ||
+    data?.filePath ||
+    data?.path;
+
+  console.log('[Snaply] image upload response:', {
+    status: response.status,
+    keys: Object.keys(data || {}),
+    mediaUrl: returnedMediaUrl,
+  });
 
   if (
     response.status < 200 ||
@@ -81,14 +103,11 @@ export async function uploadImageAsset(asset, onProgress) {
     );
   }
 
-  const mediaUrl =
-    data?.mediaUrl ||
-    data?.url ||
-    data?.filePath;
+  const mediaUrl = returnedMediaUrl;
 
   if (
     !mediaUrl ||
-    /^(file:|blob:|content:)/i.test(mediaUrl)
+    /^(file:|blob:|content:|assets-library:|ph:|data:)/i.test(mediaUrl)
   ) {
     throw new Error(
       'Image upload did not return a usable server URL.'
@@ -99,6 +118,77 @@ export async function uploadImageAsset(asset, onProgress) {
     ...data,
     mediaUrl,
   };
+}
+
+function getVideoMimeType(videoUri, fileName) {
+  const source = `${fileName || ''} ${videoUri || ''}`.split(/[?#]/, 1)[0].toLowerCase();
+  if (/\.mov(?:\s|$)/.test(source)) return 'video/quicktime';
+  if (/\.m4v(?:\s|$)/.test(source)) return 'video/x-m4v';
+  if (/\.webm(?:\s|$)/.test(source)) return 'video/webm';
+  return 'video/mp4';
+}
+
+function getVideoExtension(mimeType) {
+  if (mimeType === 'video/quicktime') return '.mov';
+  if (mimeType === 'video/x-m4v') return '.m4v';
+  if (mimeType === 'video/webm') return '.webm';
+  return '.mp4';
+}
+
+export async function uploadVideoAsset(videoUri, uploadUrl, fileName, onProgress) {
+  const uri = typeof videoUri === 'string' ? videoUri.trim() : '';
+  if (!uri) {
+    throw new Error('The selected video does not have a readable URI.');
+  }
+
+  // Android's picker normally returns content:// or file://. Pass either URI
+  // straight to React Native FormData so its native networking layer can read it.
+  if (!/^(content|file):\/\//i.test(uri)) {
+    throw new Error('The selected video URI is not a usable local file.');
+  }
+  if (!uploadUrl) {
+    throw new Error('Video upload URL is missing.');
+  }
+
+  const mimeType = getVideoMimeType(uri, fileName);
+  const name = fileName || `snaply-reel-${Date.now()}${getVideoExtension(mimeType)}`;
+  const formData = new FormData();
+  formData.append('file', {
+    uri,
+    type: mimeType,
+    name,
+  });
+
+  const token = await getAuthToken();
+  let response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  } catch (error) {
+    throw new Error(error?.message || 'Unable to connect to the video upload server.');
+  }
+
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Video upload returned an invalid response (HTTP ${response.status}).`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.message || `Video upload failed (HTTP ${response.status}).`);
+  }
+
+  return data;
 }
 
 /**
@@ -184,6 +274,10 @@ export async function apiRequest(path, options = {}) {
       );
 
       apiError.status = response.status;
+      apiError.kind =
+        response.status === 401 ? 'authentication' :
+        response.status >= 400 && response.status < 500 ? 'validation' :
+        'server';
 
       throw apiError;
     }
@@ -202,10 +296,23 @@ export async function apiRequest(path, options = {}) {
       error?.message || error
     );
 
-    throw new Error(
-      'Unable to connect to Snaply server'
+    const networkError = new Error(
+      'Unable to connect to Snaply server. Check your connection and API URL.'
     );
+    networkError.kind = 'network';
+    throw networkError;
   }
+}
+
+export function toggleFollow(currentUserId, targetUserId, isFollowing) {
+  if (!currentUserId || !targetUserId || String(currentUserId) === String(targetUserId)) {
+    return Promise.reject(new Error('A valid current user and different target user are required.'));
+  }
+
+  return apiRequest(`/users/${targetUserId}/follow`, {
+    method: isFollowing ? 'DELETE' : 'POST',
+    body: JSON.stringify({ currentUserId }),
+  });
 }
 
 /**

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  BackHandler,
   Image,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { apiRequest, uploadImageAsset, uploadVideoAsset } from '../services/api';
@@ -33,13 +35,69 @@ function CreateVideoPreview({ uri }) {
 
 export default function CreateScreen({ navigation, route }) {
   const [videoUri, setVideoUri] = useState('');
+  const [videoAsset, setVideoAsset] = useState(null);
   const [storyVideoDuration, setStoryVideoDuration] = useState(0);
   const [photoAsset, setPhotoAsset] = useState(null);
-  const [creationMode, setCreationMode] = useState(route.params?.mode === 'story' ? 'story' : 'reel');
+  const initialMode = ['post', 'reel', 'story'].includes(route.params?.mode)
+    ? route.params.mode
+    : 'reel';
+  const [creationMode, setCreationMode] = useState(initialMode);
   const [caption, setCaption] = useState('');
   const [musicName, setMusicName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+
+  const hasDraft = Boolean(
+    photoAsset?.uri
+    || videoUri
+    || caption.trim()
+    || musicName.trim()
+  );
+
+  const requestClose = () => {
+    if (submitting) return;
+    if (!hasDraft) {
+      if (navigation.canGoBack()) navigation.goBack();
+      return;
+    }
+
+    Alert.alert(
+      'Discard draft?',
+      'Your selected media and caption will be discarded.',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            if (navigation.canGoBack()) navigation.goBack();
+          },
+        },
+      ],
+    );
+  };
+
+  useEffect(() => {
+    const hardwareBack = BackHandler.addEventListener('hardwareBackPress', () => {
+      requestClose();
+      return true;
+    });
+    const removeBeforeRemove = navigation.addListener('beforeRemove', (event) => {
+      if (!hasDraft || submitting) return;
+      event.preventDefault();
+      requestClose();
+    });
+
+    return () => {
+      hardwareBack.remove();
+      removeBeforeRemove();
+    };
+  });
+
+  useEffect(() => {
+    if (!['post', 'reel', 'story'].includes(route.params?.mode)) return;
+    setCreationMode(route.params.mode);
+  }, [route.params?.mode]);
 
   const pickPhoto = async () => {
     const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
@@ -51,8 +109,25 @@ export default function CreateScreen({ navigation, route }) {
   };
 
   const switchToMode = (mode) => {
+    if (mode === creationMode) return;
+    if (hasDraft) {
+      Alert.alert(
+        'Discard draft?',
+        'Your selected media and text will be discarded before switching.',
+        [
+          { text: 'Keep editing', style: 'cancel' },
+          { text: 'Discard', style: 'destructive', onPress: () => switchToModeAfterConfirmation(mode) },
+        ],
+      );
+      return;
+    }
+    switchToModeAfterConfirmation(mode);
+  };
+
+  const switchToModeAfterConfirmation = (mode) => {
     setCreationMode(mode);
     setVideoUri('');
+    setVideoAsset(null);
     setStoryVideoDuration(0);
     setPhotoAsset(null);
     setCaption('');
@@ -86,6 +161,7 @@ export default function CreateScreen({ navigation, route }) {
     const asset = result.assets?.[0];
     if (!result.didCancel && asset?.uri) {
       setVideoUri(asset.uri);
+      setVideoAsset(asset);
       setComposerOpen(false);
       console.log('[Snaply] reel selected:', asset.uri);
     }
@@ -107,15 +183,18 @@ export default function CreateScreen({ navigation, route }) {
       Alert.alert('No video selected', 'Choose a short video before publishing.');
       return;
     }
+    if (Number(videoAsset?.fileSize || 0) > 100 * 1024 * 1024) {
+      Alert.alert('Video is too large', 'Video is too large. Maximum size is 100 MB.');
+      return;
+    }
 
     try {
       setSubmitting(true);
       const devUser = await apiRequest('/users/me');
 
-      const fileName = `snaply-reel-${Date.now()}.mp4`;
       const uploadUrl = `${API_BASE_URL}/uploads/reel-video`;
       console.log('[Snaply] upload URL:', uploadUrl);
-      const uploadResponse = await uploadVideoAsset(videoUri, uploadUrl, fileName);
+      const uploadResponse = await uploadVideoAsset(videoUri, uploadUrl, videoAsset?.fileName);
       const permanentVideoUrl = uploadResponse?.mediaUrl || uploadResponse?.url;
       const thumbnailUrl = uploadResponse?.thumbnailUrl || uploadResponse?.posterUrl;
       if (!permanentVideoUrl) throw new Error('Video upload did not return a media URL.');
@@ -142,6 +221,7 @@ export default function CreateScreen({ navigation, route }) {
         [{ text: 'OK', onPress: () => navigation?.goBack() }]
       );
       setVideoUri('');
+      setVideoAsset(null);
       setCaption('');
       setMusicName('');
       setComposerOpen(false);
@@ -232,6 +312,20 @@ export default function CreateScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={requestClose}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={28} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {creationMode === 'post' ? 'Create Post' : creationMode === 'story' ? 'Add Story' : 'Create Reel'}
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.modeRow}>
           <TouchableOpacity
@@ -254,7 +348,6 @@ export default function CreateScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title}>{creationMode === 'post' ? 'Create Photo Post' : creationMode === 'story' ? 'Create Story' : 'Create Reel'}</Text>
         <Text style={styles.subtitle}>{creationMode === 'post' ? 'Share a photo with your Snaply friends.' : creationMode === 'story' ? 'Share a photo or video for 24 hours.' : 'Share a short video with your Snaply friends.'}</Text>
 
         {creationMode === 'post' ? (
@@ -356,6 +449,30 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  header: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  backButton: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  headerSpacer: {
+    width: 52,
   },
   content: {
     padding: 20,

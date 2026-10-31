@@ -17,6 +17,11 @@ const messageSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    clientMessageId: {
+      type: String,
+      default: '',
+      index: true,
+    },
     text: {
       type: String,
       default: '',

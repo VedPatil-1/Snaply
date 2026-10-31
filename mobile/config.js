@@ -7,6 +7,7 @@ const PHYSICAL_LAN_IP = '10.23.8.245';
 const ANDROID_EMULATOR_HOST = `http://10.0.2.2:${PORT}`;
 const WEB_HOST = `http://localhost:${PORT}`;
 const PRODUCTION_BACKEND_URL = 'https://snaply-server-aogm.onrender.com';
+const ANDROID_DEVICE_MODE = 'emulator';
 
 const isProduction =
   process.env.NODE_ENV === 'production'
@@ -31,7 +32,10 @@ function resolveLocalHost() {
     return WEB_HOST;
   }
 
-  if (String(process.env.EXPO_PUBLIC_USE_EMULATOR || '').toLowerCase() === 'true') {
+  const useEmulator = String(process.env.EXPO_PUBLIC_USE_EMULATOR || '').toLowerCase() === 'true';
+  const configuredMode = String(process.env.SNAPLY_ANDROID_DEVICE_MODE || ANDROID_DEVICE_MODE).toLowerCase();
+
+  if (useEmulator || Platform.OS === 'android' && configuredMode !== 'physical') {
     return ANDROID_EMULATOR_HOST;
   }
 

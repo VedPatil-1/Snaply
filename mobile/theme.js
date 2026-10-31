@@ -1,16 +1,16 @@
 export const colors = {
-  bg: '#F7F8FC',
+  bg: '#FFFFFF',
   surface: '#FFFFFF',
   surfaceElevated: '#FFFFFF',
-  text: '#151827',
-  textSecondary: '#73788C',
-  textMuted: '#A2A6B5',
-  border: '#ECEEF5',
-  borderStrong: '#DDE1EC',
+  text: '#111111',
+  textSecondary: '#666666',
+  textMuted: '#9A9A9A',
+  border: '#E8E8E8',
+  borderStrong: '#D9D5CF',
   accent: '#6657E8',
-  accentDeep: '#4536B8',
-  accentSoft: '#EEEAFE',
-  accentWarm: '#FF9B72',
+  accentDeep: '#5146C7',
+  accentSoft: '#F1F0FF',
+  accentWarm: '#C8A6FF',
   like: '#EF4444',
   seen: '#6657E8',
   online: '#22C55E',
@@ -22,8 +22,8 @@ export const colors = {
 
 export const radius = {
   xs: 8,
-  sm: 12,
-  md: 16,
+  sm: 10,
+  md: 14,
   lg: 22,
   xl: 28,
   pill: 999,
@@ -48,10 +48,10 @@ export const typography = {
 
 export const shadows = {
   card: {
-    shadowColor: '#25204A',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 4,
+    shadowColor: '#281B52',
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
 };

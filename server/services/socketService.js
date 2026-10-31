@@ -88,23 +88,34 @@ const setupSocketIO = (server, corsOptions = { origin: '*' }) => {
 
     socket.on('send_message', async (payload) => {
       try {
-        const { conversationId, sender, receiver, text, mediaUrl = '', messageType = 'text' } = payload || {};
+        const { conversationId, sender, receiver, text, mediaUrl = '', messageType = 'text', clientMessageId = '' } = payload || {};
 
         if (!conversationId || !sender || !receiver || !isObjectId(conversationId) || !isObjectId(sender) || !isObjectId(receiver)) {
-          socket.emit('message_error', { message: 'conversationId, sender and receiver are required' });
+          socket.emit('message_error', { message: 'conversationId, sender and receiver are required', clientMessageId });
           return;
         }
 
         const conversation = await Conversation.findById(conversationId);
         if (!conversation || !isConversationMember(conversation, sender) || !isConversationMember(conversation, receiver)) {
-          socket.emit('message_error', { message: 'Conversation not found' });
+          socket.emit('message_error', { message: 'Conversation not found', clientMessageId });
           return;
         }
 
         if (!['text', 'image'].includes(messageType)
           || (messageType === 'image' && (!mediaUrl || /^file:/i.test(mediaUrl)))
           || (messageType === 'text' && !String(text).trim())) {
-          socket.emit('message_error', { message: 'Invalid message payload' });
+          socket.emit('message_error', { message: 'Invalid message payload', clientMessageId });
+          return;
+        }
+
+        const existingMessage = clientMessageId
+          ? await Message.findOne({ sender, clientMessageId })
+          : null;
+        if (existingMessage) {
+          const populatedExisting = await Message.findById(existingMessage._id)
+            .populate('sender', 'name username profilePicture online')
+            .populate('receiver', 'name username profilePicture online');
+          socket.emit('message_sent', { message: populatedExisting });
           return;
         }
 
@@ -115,6 +126,7 @@ const setupSocketIO = (server, corsOptions = { origin: '*' }) => {
           text: text || '',
           mediaUrl,
           messageType,
+          clientMessageId,
           status: 'sent',
         });
 
@@ -153,7 +165,7 @@ const setupSocketIO = (server, corsOptions = { origin: '*' }) => {
           });
         }
       } catch (error) {
-        socket.emit('message_error', { message: error.message || 'Unable to send message' });
+        socket.emit('message_error', { message: error.message || 'Unable to send message', clientMessageId: payload?.clientMessageId });
       }
     });
 

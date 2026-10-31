@@ -10,10 +10,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from './screens/HomeScreen';
-import SearchScreen from './screens/SearchScreen';
+import ExploreScreen from './screens/ExploreScreen';
 import ReelsScreen from './screens/ReelsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import InboxScreen from './screens/InboxScreen';
@@ -43,13 +43,17 @@ const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 
 function RootTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.accent,
+        tabBarStyle: [styles.tabBar, {
+          height: BOTTOM_TAB_BAR_HEIGHT + insets.bottom,
+          paddingBottom: Math.max(8, insets.bottom),
+        }],
+        tabBarActiveTintColor: colors.accentDeep,
         tabBarInactiveTintColor: colors.textMuted,
 
         tabBarIcon: ({ color, size, focused }) => {
@@ -61,20 +65,30 @@ function RootTabs() {
             Reels: focused
               ? 'play-circle'
               : 'play-circle-outline',
-            Search: focused
-              ? 'search'
-              : 'search-outline',
+            Explore: focused
+              ? 'compass'
+              : 'compass-outline',
             Profile: focused
               ? 'person'
               : 'person-outline',
           };
 
+          if (route.name === 'Reels') {
+            return (
+              <View style={styles.createTabIcon}>
+                <Ionicons name="play" size={23} color="#FFFFFF" />
+              </View>
+            );
+          }
+
           return (
-            <Ionicons
-              name={icons[route.name] || 'ellipse-outline'}
-              size={size}
-              color={color}
-            />
+            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
+              <Ionicons
+                name={icons[route.name] || 'ellipse-outline'}
+                size={focused ? 23 : 22}
+                color={color}
+              />
+            </View>
           );
         },
       })}
@@ -95,8 +109,8 @@ function RootTabs() {
       />
 
       <Tab.Screen
-        name="Search"
-        component={SearchScreen}
+        name="Explore"
+        component={ExploreScreen}
       />
 
       <Tab.Screen
@@ -309,19 +323,28 @@ const styles = StyleSheet.create({
   },
 
   tabBar: {
-    height: BOTTOM_TAB_BAR_HEIGHT,
-    paddingBottom: 8,
-    paddingTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: 'rgba(255,255,255,0.98)',
-    shadowColor: '#25204A',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: {
-      width: 0,
-      height: -5,
-    },
-    elevation: 10,
+    elevation: 0,
+  },
+  tabIcon: {
+    width: 44,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconActive: {
+    backgroundColor: 'transparent',
+  },
+  createTabIcon: {
+    width: 42,
+    height: 42,
+    marginTop: -10,
+    borderRadius: 21,
+    backgroundColor: '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

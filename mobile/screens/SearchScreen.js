@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { apiRequest } from '../services/api';
+import { apiRequest, toggleFollow as requestFollow } from '../services/api';
 import { publishUserUpdate, subscribeToUserUpdates } from '../services/sync';
 import { resolveMediaThumbnailUrl, resolveMediaUrl, resolvePostMediaUrl } from '../config';
 import { colors, radius, shadows, spacing, typography } from '../theme';
@@ -33,6 +33,7 @@ export default function SearchScreen({ navigation }) {
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const debouncedSearchRef = useRef(null);
+  const followVersionsRef = useRef(new Map());
 
   const loadExplore = useCallback(async () => {
     try {
@@ -76,9 +77,9 @@ export default function SearchScreen({ navigation }) {
     loadExplore();
   }, [loadExplore]);
 
-  useEffect(() => subscribeToUserUpdates(({ targetUser, currentUser: updatedCurrentUser }) => {
+  useEffect(() => subscribeToUserUpdates(({ targetUser, currentUser: updatedCurrentUser, isFollowing }) => {
     if (targetUser?._id) {
-      setUsers((prev) => prev.map((item) => String(item._id) === String(targetUser._id) ? { ...item, ...targetUser, isFollowing: Boolean(updatedCurrentUser?.following?.some((id) => String(id) === String(targetUser._id))) } : item));
+      setUsers((prev) => prev.map((item) => String(item._id) === String(targetUser._id) ? { ...item, ...targetUser, isFollowing: typeof isFollowing === 'boolean' ? isFollowing : Boolean(updatedCurrentUser?.following?.some((id) => String(id) === String(targetUser._id))) } : item));
     }
     if (updatedCurrentUser?._id && String(updatedCurrentUser._id) === String(currentUser?._id)) setCurrentUser(updatedCurrentUser);
   }), [currentUser?._id]);
@@ -130,25 +131,27 @@ export default function SearchScreen({ navigation }) {
     debouncedSearchRef.current(query);
   }, [query, runSearch]);
 
-  const toggleFollow = async (targetUserId, isFollowing) => {
+  const toggleFollow = (targetUserId, isFollowing) => {
     if (!currentUser || !targetUserId) return;
 
-    try {
-      const method = isFollowing ? 'DELETE' : 'POST';
-      const response = await apiRequest(`/users/${targetUserId}/follow`, {
-        method,
-        body: JSON.stringify({ currentUserId: currentUser._id }),
-      });
+    const id = String(targetUserId);
+    const version = (followVersionsRef.current.get(id) || 0) + 1;
+    followVersionsRef.current.set(id, version);
+    setUsers((prev) => prev.map((item) => String(item._id) === id ? { ...item, isFollowing: !isFollowing } : item));
 
-      setUsers((prev) => prev.map((item) => (
-        String(item._id) === String(targetUserId)
-          ? { ...item, isFollowing: !isFollowing }
-          : item
-      )));
-      publishUserUpdate(response);
-    } catch (searchError) {
-      console.warn('Search follow failed:', searchError.message);
-    }
+    return requestFollow(currentUser._id, targetUserId, isFollowing)
+      .then((response) => {
+        if (followVersionsRef.current.get(id) === version) {
+          setUsers((prev) => prev.map((item) => String(item._id) === id ? { ...item, isFollowing: Boolean(response?.isFollowing) } : item));
+          publishUserUpdate(response);
+        }
+        return response;
+      })
+      .catch((error) => {
+        if (followVersionsRef.current.get(id) === version) setUsers((prev) => prev.map((item) => String(item._id) === id ? { ...item, isFollowing } : item));
+        console.warn('Search follow failed:', error.message);
+        throw error;
+      });
   };
 
   const handleMessageUser = async (user) => {
@@ -216,7 +219,8 @@ export default function SearchScreen({ navigation }) {
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => {
           if (item.type === 'user') {
-            const isFollowing = Boolean(item.isFollowing || item.following?.includes(currentUser?._id));
+            const isCurrentUser = String(item._id) === String(currentUser?._id);
+            const isFollowing = Boolean(item.isFollowing || item.following?.some((id) => String(id) === String(currentUser?._id)));
             return (
               <View style={styles.userRow}>
                 <TouchableOpacity style={styles.userResultHitTarget} onPress={() => String(item._id) === String(currentUser?._id) ? navigation.navigate('ProfileViewer') : navigation.navigate('UserProfile', { userId: item._id })}>
@@ -227,12 +231,12 @@ export default function SearchScreen({ navigation }) {
                   </View>
                 </TouchableOpacity>
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity
+                  {!isCurrentUser ? <TouchableOpacity
                     style={[styles.followButton, isFollowing && styles.followingButton]}
                     onPress={() => toggleFollow(item._id, isFollowing)}
                   >
                     <Text style={[styles.followText, isFollowing && styles.followingText]}>{isFollowing ? 'Following' : 'Follow'}</Text>
-                  </TouchableOpacity>
+                  </TouchableOpacity> : null}
 
                   <TouchableOpacity
                     style={styles.messageButton}
@@ -432,7 +436,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   followingButton: {
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.accentSoft,
   },
   followText: {
     color: '#fff',
@@ -440,7 +444,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   followingText: {
-    color: '#111827',
+    color: colors.accentDeep,
   },
   actionButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   messageButton: { backgroundColor: '#f3f4f6', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },

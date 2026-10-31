@@ -62,7 +62,25 @@ export default function InboxScreen({ navigation }) {
     if (!currentUserId) return;
     const refreshForMessage = ({ message }) => {
       if (!message?.conversation) return;
-      refreshConversations();
+      const conversationId = String(message.conversation?._id || message.conversation);
+      let matched = false;
+      setConversations((previous) => {
+        const next = previous.map((conversation) => {
+          if (String(conversation._id) !== conversationId) return conversation;
+          matched = true;
+          const isIncoming = String(message.sender?._id || message.sender) !== String(currentUserId);
+          return {
+            ...conversation,
+            latestMessage: message,
+            lastMessage: message.messageType === 'image' ? '📷 Photo' : message.text || '',
+            lastMessageAt: message.createdAt || conversation.lastMessageAt,
+            updatedAt: message.createdAt || conversation.updatedAt,
+            unreadCount: Math.max(0, Number(conversation.unreadCount || 0) + (isIncoming ? 1 : 0)),
+          };
+        });
+        return next.sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0));
+      });
+      if (!matched) refreshConversations();
     };
     socket.on('receive_message', refreshForMessage);
     socket.on('message_sent', refreshForMessage);
@@ -109,7 +127,17 @@ export default function InboxScreen({ navigation }) {
                 {isOnline ? <View style={styles.onlineDot} /> : null}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.textWrap} onPress={() => navigation.navigate('ChatThread', { conversationId: item._id, userId: currentUserId, otherUser })}>
+              <TouchableOpacity
+                style={styles.textWrap}
+                onPress={() => {
+                  setConversations((previous) => previous.map((conversation) => (
+                    String(conversation._id) === String(item._id)
+                      ? { ...conversation, unreadCount: 0 }
+                      : conversation
+                  )));
+                  navigation.navigate('ChatThread', { conversationId: item._id, userId: currentUserId, otherUser });
+                }}
+              >
                 <View style={styles.nameRow}>
                   <Text style={styles.username}>{displayName}</Text>
                   {item.unreadCount ? <View style={styles.badge}><Text style={styles.badgeText}>{item.unreadCount}</Text></View> : null}

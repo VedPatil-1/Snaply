@@ -13,12 +13,15 @@ import {
 } from "react-native";
 
 import { api, setAuthToken } from "../services/api";
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { colors, radius, spacing, typography } from '../theme';
 
 export default function RegisterScreen({ navigation, onRegistered }) {
     const [name, setName] = useState("");
     const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [passwordVisible, setPasswordVisible] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -70,6 +73,8 @@ export default function RegisterScreen({ navigation, onRegistered }) {
             console.error("Registration error:", err);
 
             setError(
+                err?.kind === "network" ? err.message :
+                err?.kind === "server" ? "The Snaply server is unavailable. Please try again shortly." :
                 err?.message ||
                 "Registration failed. Please try again."
             );
@@ -85,7 +90,7 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                 behavior={
                     Platform.OS === "ios"
                         ? "padding"
-                        : undefined
+                            : "height"
                 }
             >
                 <ScrollView
@@ -93,6 +98,7 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                     keyboardShouldPersistTaps="handled"
                 >
                     <View style={styles.header}>
+                        <View style={styles.brandMark}><Ionicons name="sparkles" size={22} color="#fff" /></View>
                         <Text style={styles.logo}>Snaply</Text>
 
                         <Text style={styles.title}>
@@ -105,6 +111,8 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                     </View>
 
                     <View style={styles.form}>
+                        <View style={styles.inputWrap}>
+                        <Ionicons name="person-outline" size={19} color={colors.textMuted} />
                         <TextInput
                             style={styles.input}
                             placeholder="Full name"
@@ -113,7 +121,10 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                             onChangeText={setName}
                             autoCapitalize="words"
                         />
+                        </View>
 
+                        <View style={styles.inputWrap}>
+                        <Ionicons name="at-outline" size={19} color={colors.textMuted} />
                         <TextInput
                             style={styles.input}
                             placeholder="Username"
@@ -123,7 +134,10 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                             autoCapitalize="none"
                             autoCorrect={false}
                         />
+                        </View>
 
+                        <View style={styles.inputWrap}>
+                        <Ionicons name="mail-outline" size={19} color={colors.textMuted} />
                         <TextInput
                             style={styles.input}
                             placeholder="Email"
@@ -134,16 +148,23 @@ export default function RegisterScreen({ navigation, onRegistered }) {
                             autoCapitalize="none"
                             autoCorrect={false}
                         />
+                        </View>
 
+                        <View style={styles.inputWrap}>
+                        <Ionicons name="lock-closed-outline" size={19} color={colors.textMuted} />
                         <TextInput
                             style={styles.input}
                             placeholder="Password"
                             placeholderTextColor="#999"
                             value={password}
                             onChangeText={setPassword}
-                            secureTextEntry
+                            secureTextEntry={!passwordVisible}
                             autoCapitalize="none"
                         />
+                        <TouchableOpacity onPress={() => setPasswordVisible((value) => !value)}>
+                            <Ionicons name={passwordVisible ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
+                        </TouchableOpacity>
+                        </View>
 
                         {error ? (
                             <Text style={styles.error}>
@@ -193,7 +214,7 @@ export default function RegisterScreen({ navigation, onRegistered }) {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: "#fff",
+        backgroundColor: colors.bg,
     },
 
     keyboardView: {
@@ -203,33 +224,41 @@ const styles = StyleSheet.create({
     container: {
         flexGrow: 1,
         justifyContent: "center",
-        paddingHorizontal: 28,
+        paddingHorizontal: spacing.lg,
         paddingVertical: 40,
     },
 
     header: {
         alignItems: "center",
-        marginBottom: 36,
+        marginBottom: spacing.xl,
+    },
+
+    brandMark: {
+        width: 52,
+        height: 52,
+        borderRadius: radius.lg,
+        backgroundColor: colors.accent,
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: spacing.md,
     },
 
     logo: {
-        fontSize: 38,
-        fontWeight: "800",
-        color: "#000",
-        marginBottom: 20,
+        ...typography.display,
+        color: colors.text,
+        marginBottom: spacing.sm,
     },
 
     title: {
-        fontSize: 26,
-        fontWeight: "700",
-        color: "#111",
+        ...typography.title,
+        color: colors.text,
         textAlign: "center",
     },
 
     subtitle: {
         marginTop: 8,
         fontSize: 15,
-        color: "#777",
+        color: colors.textSecondary,
         textAlign: "center",
     },
 
@@ -237,28 +266,34 @@ const styles = StyleSheet.create({
         width: "100%",
     },
 
-    input: {
-        height: 52,
+    inputWrap: {
+        minHeight: 54,
+        flexDirection: 'row',
+        alignItems: 'center',
         borderWidth: 1,
-        borderColor: "#ddd",
-        borderRadius: 12,
+        borderColor: colors.borderStrong,
+        borderRadius: radius.md,
         paddingHorizontal: 16,
+        marginBottom: spacing.md,
+        backgroundColor: colors.surface,
+    },
+    input: {
+        flex: 1,
+        paddingHorizontal: spacing.sm,
         fontSize: 16,
-        color: "#111",
-        marginBottom: 14,
-        backgroundColor: "#fafafa",
+        color: colors.text,
     },
 
     error: {
-        color: "#e53935",
+        color: "#dc2626",
         fontSize: 14,
         marginBottom: 14,
     },
 
     registerButton: {
         height: 52,
-        borderRadius: 12,
-        backgroundColor: "#000",
+        borderRadius: radius.md,
+        backgroundColor: colors.accent,
         alignItems: "center",
         justifyContent: "center",
         marginTop: 4,
@@ -287,7 +322,7 @@ const styles = StyleSheet.create({
     },
 
     loginLink: {
-        color: "#000",
+        color: colors.accentDeep,
         fontSize: 14,
         fontWeight: "700",
         marginLeft: 5,

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { resolveMediaUrl } from '../config';
-import { colors, radius, shadows, spacing, typography } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 
-export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onFollowToggle, onMessage, onOpenFollowers, onOpenFollowing, onAvatarPress }) {
+export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onShareProfile, onFollowToggle, onMessage, onOpenFollowers, onOpenFollowing, onAvatarPress }) {
   const followers = user?.followersCount ?? user?.followers?.length ?? 0;
   const following = user?.followingCount ?? user?.following?.length ?? 0;
   const postsCount = user?.postsCount ?? user?.posts?.length ?? 0;
@@ -36,9 +36,14 @@ export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onFo
 
       <View style={styles.actionRow}>
         {isCurrentUser ? (
-          <TouchableOpacity style={styles.primaryButton} onPress={onEditProfile}>
-            <Text style={styles.primaryButtonText}>Edit Profile</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.primaryButton} onPress={onEditProfile}>
+              <Text style={styles.primaryButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryAction} onPress={onShareProfile}>
+              <Text style={styles.secondaryActionText}>Share Profile</Text>
+            </TouchableOpacity>
+          </>
         ) : (
           <>
             <TouchableOpacity
@@ -61,11 +66,11 @@ export default function ProfileHeader({ user, isCurrentUser, onEditProfile, onFo
 
 const styles = StyleSheet.create({
   container: {
-    margin: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radius.lg,
+    margin: 0,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderRadius: 0,
     backgroundColor: colors.surface,
-    ...shadows.card,
   },
   topRow: {
     flexDirection: 'row',
@@ -136,7 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
   },
   secondaryButtonText: {
-    color: '#111827',
+    color: colors.accentDeep,
   },
   secondaryAction: {
     flex: 1,

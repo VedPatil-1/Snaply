@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Post = require('../models/Post');
 const Reel = require('../models/Reel');
+const mongoose = require('mongoose');
 const { createNotification } = require('./notificationController');
 
 const normalizeUsername = (value = '') => String(value).trim().toLowerCase();
@@ -122,7 +123,7 @@ const toggleSavedReel = async (req, res, next) => {
       return res.status(400).json({ message: 'userId and reelId are required' });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select('_id savedReels');
     const Reel = require('../models/Reel');
     const reel = await Reel.findById(reelId);
 
@@ -134,18 +135,17 @@ const toggleSavedReel = async (req, res, next) => {
       return res.status(404).json({ message: 'Reel not found' });
     }
 
-    const alreadySaved = user.savedReels.some((savedId) => String(savedId) === String(reelId));
+    const alreadySaved = (user.savedReels || []).some((savedId) => String(savedId) === String(reelId));
     const shouldSave = req.method === 'POST' ? true : req.method === 'DELETE' ? false : !alreadySaved;
-    if (!shouldSave) {
-      user.savedReels = user.savedReels.filter((savedId) => String(savedId) !== String(reelId));
-    } else if (!alreadySaved) {
-      user.savedReels.push(reelId);
-    }
-
-    await user.save();
-
-    const populated = await User.findById(user._id)
+    const update = shouldSave
+      ? { $addToSet: { savedReels: reelId } }
+      : { $pull: { savedReels: reelId } };
+    const populated = await User.findByIdAndUpdate(userId, update, { new: true })
       .populate('savedReels', 'videoUrl thumbnailUrl caption musicName user likes comments views createdAt');
+
+    if (!populated) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
     return res.status(200).json({
       isSaved: shouldSave,
@@ -166,9 +166,14 @@ const toggleSavedPost = async (req, res, next) => {
       return res.status(400).json({ message: 'userId and postId are required' });
     }
 
-    const user = await User.findById(userId);
-    const Post = require('../models/Post');
-    const post = await Post.findById(postId);
+    if (!mongoose.isValidObjectId(userId) || !mongoose.isValidObjectId(postId)) {
+      return res.status(400).json({ message: 'Invalid userId or postId' });
+    }
+
+    const [user, post] = await Promise.all([
+      User.findById(userId).select('savedPosts').lean(),
+      Post.findById(postId).select('_id').lean(),
+    ]);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -178,26 +183,24 @@ const toggleSavedPost = async (req, res, next) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    if (!Array.isArray(user.savedPosts)) {
-      user.savedPosts = [];
-    }
-
-    const alreadySaved = user.savedPosts.some((savedId) => String(savedId) === String(postId));
+    const savedPosts = Array.isArray(user.savedPosts) ? user.savedPosts : [];
+    const alreadySaved = savedPosts.some((savedId) => String(savedId) === String(postId));
     const shouldSave = req.method === 'POST' ? true : req.method === 'DELETE' ? false : !alreadySaved;
-    if (!shouldSave) {
-      user.savedPosts = user.savedPosts.filter((savedId) => String(savedId) !== String(postId));
-    } else if (!alreadySaved) {
-      user.savedPosts.push(postId);
+
+    const update = shouldSave
+      ? { $addToSet: { savedPosts: postId } }
+      : { $pull: { savedPosts: postId } };
+    const updatedUser = await User.findByIdAndUpdate(userId, update, { new: true })
+      .populate('savedPosts', 'mediaUrl caption user');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
     }
-
-    await user.save();
-
-    const populated = await User.findById(user._id).populate('savedPosts', 'mediaUrl caption user');
 
     return res.status(200).json({
       isSaved: shouldSave,
-      savedPosts: populated.savedPosts || [],
-      user: populated.toJSON(),
+      savedPosts: updatedUser.savedPosts || [],
+      user: updatedUser.toJSON(),
     });
   } catch (error) {
     next(error);
@@ -209,7 +212,7 @@ const followUser = async (req, res, next) => {
     const targetId = req.params.id;
     const currentUserId = req.body.currentUserId || req.query.currentUserId || req.body.userId;
 
-    if (!currentUserId) {
+    if (!currentUserId || !mongoose.isValidObjectId(currentUserId) || !mongoose.isValidObjectId(targetId)) {
       return res.status(400).json({ message: 'currentUserId is required' });
     }
 
@@ -217,40 +220,40 @@ const followUser = async (req, res, next) => {
       return res.status(400).json({ message: 'Users cannot follow themselves.' });
     }
 
-    const currentUser = await User.findById(currentUserId);
-    const targetUser = await User.findById(targetId);
+    const [currentUser, targetUser] = await Promise.all([
+      User.findById(currentUserId).select('name username following followers'),
+      User.findById(targetId).select('name username following followers'),
+    ]);
 
     if (!currentUser || !targetUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const alreadyFollowing = currentUser.following.some((userId) => String(userId) === String(targetId));
+    const alreadyFollowing = (currentUser.following || []).some((userId) => String(userId) === String(targetId));
+    const [updatedCurrentUser, updatedTargetUser] = await Promise.all([
+      User.findByIdAndUpdate(currentUserId, { $addToSet: { following: targetId } }, { new: true }),
+      User.findByIdAndUpdate(targetId, { $addToSet: { followers: currentUserId } }, { new: true }),
+    ]);
 
-    if (alreadyFollowing) {
-      return res.status(400).json({ message: 'You are already following this user.' });
-    }
-
-    currentUser.following.push(targetId);
-    targetUser.followers.push(currentUserId);
-
-    await Promise.all([currentUser.save(), targetUser.save()]);
-
-    const notification = await createNotification({
-      recipient: targetId,
-      sender: currentUserId,
-      type: 'follow',
-      message: `${currentUser.username || 'Someone'} started following you.`,
-    });
+    const notification = alreadyFollowing
+      ? null
+      : await createNotification({
+        recipient: targetId,
+        sender: currentUserId,
+        type: 'follow',
+        message: `${updatedCurrentUser.username || 'Someone'} started following you.`,
+      });
 
     if (notification && global.io) {
       global.io.to(`user:${targetId}`).emit('notification_received', { notification });
     }
 
     return res.status(200).json({
+      success: true,
       message: 'Followed successfully',
       isFollowing: true,
-      currentUser: currentUser.toJSON(),
-      targetUser: targetUser.toJSON(),
+      currentUser: updatedCurrentUser.toJSON(),
+      targetUser: updatedTargetUser.toJSON(),
     });
   } catch (error) {
     next(error);
@@ -262,7 +265,7 @@ const unfollowUser = async (req, res, next) => {
     const targetId = req.params.id;
     const currentUserId = req.body.currentUserId || req.query.currentUserId || req.body.userId;
 
-    if (!currentUserId) {
+    if (!currentUserId || !mongoose.isValidObjectId(currentUserId) || !mongoose.isValidObjectId(targetId)) {
       return res.status(400).json({ message: 'currentUserId is required' });
     }
 
@@ -270,23 +273,26 @@ const unfollowUser = async (req, res, next) => {
       return res.status(400).json({ message: 'Users cannot unfollow themselves.' });
     }
 
-    const currentUser = await User.findById(currentUserId);
-    const targetUser = await User.findById(targetId);
+    const [currentUser, targetUser] = await Promise.all([
+      User.findById(currentUserId).select('_id'),
+      User.findById(targetId).select('_id'),
+    ]);
 
     if (!currentUser || !targetUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    currentUser.following = currentUser.following.filter((userId) => String(userId) !== String(targetId));
-    targetUser.followers = targetUser.followers.filter((userId) => String(userId) !== String(currentUserId));
-
-    await Promise.all([currentUser.save(), targetUser.save()]);
+    const [updatedCurrentUser, updatedTargetUser] = await Promise.all([
+      User.findByIdAndUpdate(currentUserId, { $pull: { following: targetId } }, { new: true }),
+      User.findByIdAndUpdate(targetId, { $pull: { followers: currentUserId } }, { new: true }),
+    ]);
 
     return res.status(200).json({
+      success: true,
       message: 'Unfollowed successfully',
       isFollowing: false,
-      currentUser: currentUser.toJSON(),
-      targetUser: targetUser.toJSON(),
+      currentUser: updatedCurrentUser.toJSON(),
+      targetUser: updatedTargetUser.toJSON(),
     });
   } catch (error) {
     next(error);
